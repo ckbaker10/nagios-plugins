@@ -620,12 +620,18 @@ def check_p110_status(args) -> tuple:
         device_name = b64decode(device_result.get("nickname", "")).decode("utf-8") if device_result.get("nickname") else "Unknown"
         signal_level = device_result.get("signal_level", 0)
         rssi = device_result.get("rssi", 0)
+        power_protection_status = device_result.get("power_protection_status", "unknown")
+        overcurrent_status = device_result.get("overcurrent_status", "unknown")
+        charging_status = device_result.get("charging_status", "unknown")
         
         if args.verbose:
             print(f"DEBUG: Device name: {device_name}")
             print(f"DEBUG: Device on: {device_on}")
             print(f"DEBUG: Signal level: {signal_level}")
             print(f"DEBUG: RSSI: {rssi}")
+            print(f"DEBUG: Power protection status: {power_protection_status}")
+            print(f"DEBUG: Overcurrent status: {overcurrent_status}")
+            print(f"DEBUG: Charging status: {charging_status}")
         
         # Get energy usage if it's a P110
         energy_data = None
@@ -669,6 +675,19 @@ def check_p110_status(args) -> tuple:
         
         performance_data.append(f"signal_level={signal_level};{args.signal_warning};{args.signal_critical}")
         performance_data.append(f"rssi={rssi}dBm")
+        
+        # Check status fields
+        if args.expect_power_protection and power_protection_status != args.expect_power_protection:
+            exit_code = max(exit_code, NAGIOS_CRITICAL)
+            status_parts.append(f"POWER PROTECTION {power_protection_status.upper()} (expected {args.expect_power_protection})")
+        
+        if args.expect_overcurrent and overcurrent_status != args.expect_overcurrent:
+            exit_code = max(exit_code, NAGIOS_CRITICAL)
+            status_parts.append(f"OVERCURRENT {overcurrent_status.upper()} (expected {args.expect_overcurrent})")
+        
+        if args.expect_charging and charging_status != args.expect_charging:
+            exit_code = max(exit_code, NAGIOS_CRITICAL)
+            status_parts.append(f"CHARGING {charging_status.upper()} (expected {args.expect_charging})")
         
         # Process energy data if available
         if energy_data:
@@ -727,6 +746,7 @@ Examples:
   %(prog)s -H 192.168.1.100 -u user@example.com -p password --expect-on
   %(prog)s -H plug.local -u user@example.com -p password --power-warning 1000 --power-critical 1500
   %(prog)s -H 192.168.1.100 -u user@example.com -p password --signal-warning 2 --signal-critical 1 --timeout 5
+  %(prog)s -H 192.168.1.100 -u user@example.com -p password --expect-power-protection normal --expect-overcurrent normal
         """
     )
     
@@ -791,6 +811,24 @@ Examples:
         type=int,
         default=1,
         help="Signal level critical threshold (default: 1)"
+    )
+    
+    parser.add_argument(
+        "--expect-power-protection",
+        choices=["normal", "over_power"],
+        help="Expected power protection status (CRITICAL if different)"
+    )
+    
+    parser.add_argument(
+        "--expect-overcurrent",
+        choices=["normal", "over_current"],
+        help="Expected overcurrent status (CRITICAL if different)"
+    )
+    
+    parser.add_argument(
+        "--expect-charging",
+        choices=["normal", "charging", "not_charging"],
+        help="Expected charging status (CRITICAL if different)"
     )
     
     parser.add_argument(
