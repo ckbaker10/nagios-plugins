@@ -1,2 +1,4 @@
 debug_files/*
 !debug_files/.gitkeep
+uv.lock
+.venv
