@@ -1,4 +1,5 @@
 debug_files/*
 !debug_files/.gitkeep
+*.egg-info
 uv.lock
 .venv
