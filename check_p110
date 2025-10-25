@@ -72,20 +72,22 @@ class TpLinkCipher:
 class KlapCipher:
     """Encryption/decryption for TP-Link KLAP protocol"""
     def __init__(self, local_seed: bytes, remote_seed: bytes, user_hash: bytes):
-        self.seq = 0
-        
         # Derive keys from seeds
         local_hash = local_seed + remote_seed + user_hash
         
         self.key = self._key_derive(local_hash)
-        self.iv = self._iv_derive(local_hash)
+        self.iv, initial_seq = self._iv_derive(local_hash)
         self.sig = self._sig_derive(local_hash)
+        self.seq = initial_seq  # Start with derived sequence number
     
     def _key_derive(self, data: bytes) -> bytes:
         return hashlib.sha256(b"lsk" + data).digest()[:16]
     
-    def _iv_derive(self, data: bytes) -> bytes:
-        return hashlib.sha256(b"iv" + data).digest()[:12]
+    def _iv_derive(self, data: bytes) -> tuple[bytes, int]:
+        hash_data = hashlib.sha256(b"iv" + data).digest()
+        iv = hash_data[:12]
+        seq = struct.unpack(">I", hash_data[-4:])[0]  # Last 4 bytes as big-endian i32
+        return iv, seq
     
     def _sig_derive(self, data: bytes) -> bytes:
         return hashlib.sha256(b"ldk" + data).digest()[:28]
@@ -94,6 +96,7 @@ class KlapCipher:
         return self.iv + struct.pack(">I", seq)
     
     def encrypt(self, data: str) -> tuple[bytes, int]:
+        # Increment sequence number BEFORE using it (like Rust fetch_add)
         self.seq += 1
         iv_seq = self._iv_seq(self.seq)
         
@@ -106,17 +109,37 @@ class KlapCipher:
         
         return signature + encrypted, self.seq
     
-    def decrypt(self, seq: int, data: bytes) -> str:
+    def decrypt(self, seq: int, data: bytes, verbose=False) -> str:
+        if verbose:
+            print(f"DEBUG: Decrypt input - seq: {seq}, data length: {len(data)}")
+            print(f"DEBUG: Decrypt input - data hex: {data.hex()}")
+        
         if len(data) < 32:
             raise ValueError("Data too short for KLAP decryption")
         
         signature = data[:32]
         encrypted = data[32:]
         
+        if verbose:
+            print(f"DEBUG: Received signature: {signature.hex()}")
+            print(f"DEBUG: Encrypted data: {encrypted.hex()}")
+        
         # Verify signature
-        expected_sig = hashlib.sha256(self.sig + struct.pack(">I", seq) + encrypted).digest()
+        sig_data = self.sig + struct.pack(">I", seq) + encrypted
+        expected_sig = hashlib.sha256(sig_data).digest()
+        
+        if verbose:
+            print(f"DEBUG: Sig data for verification: {sig_data.hex()}")
+            print(f"DEBUG: Expected signature: {expected_sig.hex()}")
+            print(f"DEBUG: Received signature: {signature.hex()}")
+        
         if signature != expected_sig:
+            if verbose:
+                print("DEBUG: Signature verification failed!")
             raise ValueError("Invalid signature")
+        
+        if verbose:
+            print("DEBUG: Signature verification passed")
         
         iv_seq = self._iv_seq(seq)
         cipher = AES.new(self.key, AES.MODE_CBC, iv_seq)
@@ -286,13 +309,17 @@ class P100:
             print(f"DEBUG: Remote seed: {remote_seed.hex()}")
             print(f"DEBUG: Server hash: {server_hash.hex()}")
         
-        # Step 3: Verify server hash and create user hash
-        user_hash = hashlib.sha256(self.email.encode() + self.password.encode()).digest()
+        # Step 3: Create auth hash and verify server hash
+        username_hash = hashlib.sha1(self.email.encode()).digest()
+        password_hash = hashlib.sha1(self.password.encode()).digest()
+        auth_hash = hashlib.sha256(username_hash + password_hash).digest()
         
-        expected_server_hash = hashlib.sha256(local_seed + remote_seed + user_hash).digest()
+        expected_server_hash = hashlib.sha256(local_seed + remote_seed + auth_hash).digest()
         
         if verbose:
-            print(f"DEBUG: User hash: {user_hash.hex()}")
+            print(f"DEBUG: Username hash: {username_hash.hex()}")
+            print(f"DEBUG: Password hash: {password_hash.hex()}")
+            print(f"DEBUG: Auth hash: {auth_hash.hex()}")
             print(f"DEBUG: Expected server hash: {expected_server_hash.hex()}")
             print(f"DEBUG: Received server hash: {server_hash.hex()}")
         
@@ -300,25 +327,26 @@ class P100:
             raise Exception("Server hash verification failed")
         
         # Step 4: Send handshake2
-        client_hash = hashlib.sha256(remote_seed + local_seed + user_hash).digest()
+        client_hash = hashlib.sha256(remote_seed + local_seed + auth_hash).digest()
         response2 = self.session.post(f"{url}/app/handshake2", data=client_hash, timeout=10)
         
         if response2.status_code != 200:
             raise Exception(f"Handshake2 failed with HTTP {response2.status_code}")
         
-        # Step 5: Setup cipher and cookie
-        self.klapCipher = KlapCipher(local_seed, remote_seed, user_hash)
+        # Step 5: Setup cipher 
+        self.klapCipher = KlapCipher(local_seed, remote_seed, auth_hash)
         
-        # Extract cookie from handshake2 response
-        cookies = response2.cookies
-        if 'TP_SESSIONID' in cookies:
-            self.klap_cookie = f"TP_SESSIONID={cookies['TP_SESSIONID']}"
-        else:
+        # Cookies should be automatically managed by the session
+        if verbose:
+            print(f"DEBUG: Available cookies from handshake1: {list(response1.cookies.keys())}")
+            print(f"DEBUG: Session cookies after handshake: {dict(self.session.cookies)}")
+        
+        # Verify we have a session cookie  
+        if not self.session.cookies:
             raise Exception("Failed to get session cookie from KLAP handshake")
         
         if verbose:
             print("DEBUG: KLAP handshake completed successfully")
-            print(f"DEBUG: KLAP cookie: {self.klap_cookie}")
 
     def handshake(self, verbose=False):
         """Perform handshake with protocol discovery"""
@@ -433,12 +461,12 @@ class P100:
         
         self.token = response_data["result"]["token"]
 
-    def get_device_info(self):
+    def get_device_info(self, verbose=False):
         """Get device information using appropriate protocol"""
         if self.protocol == 'passthrough':
             return self._passthrough_get_device_info()
         elif self.protocol == 'klap':
-            return self._klap_get_device_info()
+            return self._klap_get_device_info(verbose)
         else:
             raise Exception("No protocol established")
     
@@ -465,32 +493,45 @@ class P100:
         decrypted_response = self.tpLinkCipher.decrypt(r.json()["result"]["response"])
         return json.loads(decrypted_response)
     
-    def _klap_get_device_info(self):
+    def _klap_get_device_info(self, verbose=False):
         """Get device info using KLAP protocol"""
         payload = {
             "method": "get_device_info",
             "requestTimeMils": int(time.time() * 1000),
         }
         
-        return self._klap_request(payload)
+        return self._klap_request(payload, verbose)
     
-    def _klap_request(self, payload):
+    def _klap_request(self, payload, verbose=False):
         """Make a KLAP request"""
         url = f"http://{self.ipAddress}"
         
         encrypted_data, seq = self.klapCipher.encrypt(json.dumps(payload))
         
-        headers = {"Cookie": self.klap_cookie}
+        # Use the session's cookie jar instead of manual headers
+        # The cookies should already be set from the handshake
         
+        if verbose:
+            print(f"DEBUG: KLAP request URL: {url}/app/request?seq={seq}")
+            print(f"DEBUG: Session cookies: {dict(self.session.cookies)}")
+            print(f"DEBUG: KLAP payload: {json.dumps(payload)}")
+        
+        # Don't set cookie headers manually, let the session handle it
         r = self.session.post(f"{url}/app/request?seq={seq}", 
                             data=encrypted_data, 
-                            headers=headers, 
                             timeout=10)
+        
+        if verbose:
+            print(f"DEBUG: KLAP response status: {r.status_code}")
+            print(f"DEBUG: KLAP response headers: {dict(r.headers)}")
         
         if r.status_code != 200:
             raise Exception(f"KLAP request failed with HTTP {r.status_code}")
         
-        decrypted_response = self.klapCipher.decrypt(seq, r.content)
+        decrypted_response = self.klapCipher.decrypt(seq, r.content, verbose)
+        if verbose:
+            print(f"DEBUG: KLAP decrypted response: {decrypted_response}")
+        
         return json.loads(decrypted_response)
 
 
@@ -529,14 +570,14 @@ class P110(P100):
         decrypted_response = self.tpLinkCipher.decrypt(r.json()["result"]["response"])
         return json.loads(decrypted_response)
     
-    def _klap_get_energy_usage(self):
+    def _klap_get_energy_usage(self, verbose=False):
         """Get energy usage using KLAP protocol"""
         payload = {
             "method": "get_energy_usage",
             "requestTimeMils": int(time.time() * 1000),
         }
         
-        return self._klap_request(payload)
+        return self._klap_request(payload, verbose)
 
 
 def check_p110_status(args) -> tuple:
@@ -563,14 +604,10 @@ def check_p110_status(args) -> tuple:
         p110.login(verbose=args.verbose)
         
         if args.verbose:
-            print("DEBUG: Handshake successful, starting login...")
-        p110.login(verbose=args.verbose)
-        
-        if args.verbose:
             print("DEBUG: Login successful, getting device info...")
         
         # Get device information
-        device_info = p110.get_device_info()
+        device_info = p110.get_device_info(verbose=args.verbose)
         
         if args.verbose:
             print(f"DEBUG: Device info response: {json.dumps(device_info, indent=2)}")
