@@ -36,6 +36,9 @@ dependencies = [
     "pycryptodome>=3.15.0",
     "pkcs7>=0.1.2",
     
+    # SNMP monitoring for printer/network devices
+    "pysnmp>=4.4.12",
+    
     # Data validation and parsing
     "pydantic>=1.10.0",
     

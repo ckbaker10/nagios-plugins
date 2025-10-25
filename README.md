@@ -14,3 +14,21 @@ Sources: https://github.com/mihai-dinculescu/tapo https://github.com/fishbigger/
 (nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_p110 -H 10.10.10.138 -u "emailaddress@mail.com" -p "Password" 
 OK - P05 Mediaserver : Device: ON - Power: 24.7W | signal_level=2;2;1 rssi=-57dBm power=24.664W;; energy_today=482Wh energy_month=12169Wh
 ```
+
+## check_jetdirect 
+Original Author : Yoann LAMY - converted to python - debugging bash is horrible
+
+```
+(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t page
+OK - Page count: 143437 | pages=143437;0;0;0
+```
+
+```
+(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t consumable -o black -w 85 -c 90
+OK - Utilisation of the black cartridge: 7% | cons_used=7;85;90;0;100
+```
+
+```
+(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t info
+OK - Info: "hp LaserJet 1320 series" (CNGW53HN8C)
+```
