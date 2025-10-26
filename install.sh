@@ -27,6 +27,25 @@ if [ "$EUID" -eq 0 ]; then
         GOSS_INSTALLED_VERSION=$(goss --version 2>/dev/null || echo "unknown")
         echo "Goss already installed: $GOSS_INSTALLED_VERSION"
     fi
+    
+    # Create /opt/goss directory if it doesn't exist
+    if [ ! -d "/opt/goss" ]; then
+        echo "Creating /opt/goss directory..."
+        mkdir -p /opt/goss
+        chown "$NAGIOS_USER:$NAGIOS_USER" /opt/goss
+        echo "Created /opt/goss directory"
+    fi
+    
+    # Copy goss.yaml from /root if it exists
+    if [ -f "/root/goss.yaml" ]; then
+        echo "Found goss.yaml in /root - copying to /opt/goss/goss.yaml..."
+        cp /root/goss.yaml /opt/goss/goss.yaml
+        chown "$NAGIOS_USER:$NAGIOS_USER" /opt/goss/goss.yaml
+        chmod 644 /opt/goss/goss.yaml
+        echo "Copied goss.yaml to /opt/goss/goss.yaml"
+    else
+        echo "No goss.yaml found in /root - skipping copy"
+    fi
 else
     echo "NOTE: Not running as root - skipping goss binary installation"
     echo "      Run 'sudo ./install.sh' if you need goss installed"
