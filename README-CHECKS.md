@@ -75,9 +75,56 @@ check_p110 -H <hostname> -u <email> -p <password> [options]
 
 ---
 
+### check_compose
+
+**Purpose**: Monitor Docker Compose services and container health status
+
+**Usage**:
+```bash
+check_compose [options]
+check_compose -p <project_name> [options]
+check_compose -f <compose_file> [options]
+check_compose -d <directory> [options]
+```
+
+**Key Features**:
+- Multi-project Docker Compose monitoring
+- Service state detection (running, stopped, unhealthy, restarting)
+- Container health status validation
+- Automatic compose command detection (docker compose vs docker-compose)
+- Configurable severity levels for unhealthy containers
+- Service-level failure reporting
+- Performance data for service counts
+
+**Options**:
+- `-p/--project`: Specify Docker Compose project name
+- `-f/--file`: Path to specific docker-compose.yml file
+- `-d/--directory`: Directory containing docker-compose.yml
+- `--unhealthy-warning`: Treat unhealthy containers as WARNING instead of CRITICAL
+- `--show-services`: Include individual service details in output
+
+**Status Detection**:
+- **Running**: Service is up and operational
+- **Unhealthy**: Service is running but health check fails
+- **Stopped**: Service has exited or is not running
+- **Restarting**: Service is in restart loop
+- **Other**: Unknown or error states
+
+**Performance Data**: Includes total services, running count, unhealthy count, stopped count, and other state count
+
+**Security**: Requires Docker access permissions. See DOCKER-SETUP.md for unprivileged nagios user configuration.
+
+**Common Use Cases**:
+- Container orchestration monitoring
+- Application stack health validation
+- Microservices deployment verification
+- Development environment status checks
+
+---
+
 ### check_jetdirect
 
-**Purpose**: Monitor network printers via SNMP using HP JetDirect or compatible print servers
+**Purpose**: Monitor network printers via SNMP protocol
 
 **Usage**:
 ```bash
@@ -207,6 +254,16 @@ define command {
     command_name    check_p110
     command_line    $USER1$/check_p110 -H $HOSTADDRESS$ -u $ARG1$ -p $ARG2$ --power-warning 1000
 }
+
+define command {
+    command_name    check_docker_compose
+    command_line    $USER1$/check_compose -p $ARG1$ $ARG2$
+}
+
+define command {
+    command_name    check_docker_compose_file
+    command_line    $USER1$/check_compose -f $ARG1$ $ARG2$
+}
 ```
 
 ### Command Line Testing
@@ -222,6 +279,12 @@ define command {
 
 # Validate server configuration
 ./check_goss -g /etc/goss/server.yaml --show-failures
+
+# Monitor Docker Compose services
+./check_compose -p icinga-playground --show-services
+
+# Monitor compose stack with file path
+./check_compose -f /opt/myapp/docker-compose.yml --unhealthy-warning
 ```
 
 ## Performance Data Format
