@@ -41,6 +41,7 @@ dependencies = [
     
     # Data validation and parsing
     "pydantic>=1.10.0",
+    "pyyaml>=5.4.0",
     
     # CMK/CheckMK related (optional, for CMK integration)
     # These would be available in CheckMK environment
