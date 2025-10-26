@@ -92,7 +92,27 @@ if command -v docker &> /dev/null; then
     if ! groups "$NAGIOS_USER" | grep -q docker; then
         usermod -aG docker "$NAGIOS_USER"
         echo "Added '$NAGIOS_USER' to docker group for Docker Compose monitoring"
-        echo "NOTE: You may need to restart Nagios/Icinga service for group changes to take effect"
+        
+        # Restart monitoring service to apply group changes
+        service_restarted=false
+        if systemctl is-active --quiet icinga2 2>/dev/null; then
+            echo "Restarting Icinga2 service to apply docker group changes..."
+            systemctl restart icinga2
+            service_restarted=true
+            echo "Icinga2 service restarted successfully"
+        elif systemctl is-active --quiet nagios 2>/dev/null; then
+            echo "Restarting Nagios service to apply docker group changes..."
+            systemctl restart nagios
+            service_restarted=true
+            echo "Nagios service restarted successfully"
+        fi
+        
+        if [ "$service_restarted" = false ]; then
+            echo "NOTE: Nagios/Icinga service not detected or not running"
+            echo "      Please restart your monitoring service manually for docker group changes to take effect:"
+            echo "      sudo systemctl restart icinga2"
+            echo "      (or sudo systemctl restart nagios)"
+        fi
     else
         echo "User '$NAGIOS_USER' is already in docker group"
     fi
