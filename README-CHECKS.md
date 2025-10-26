@@ -139,15 +139,27 @@ check_jetdirect -H <hostname> [options]
 - Page counter tracking
 - Printer identification and status
 
+**Arguments**:
+- `-H, --hostname`: Printer hostname or IP address (required)
+- `-C, --community`: SNMP community string (default: public)
+- `-t, --type`: Check type - `consumable`, `page`, or `info` (default: page)
+- `-o, --consumable`: Consumable type when using `-t consumable` - `black`, `cyan`, `magenta`, `yellow`, or `drum` (default: black)
+- `-w, --warning`: Warning threshold for consumable usage percentage (default: 0)
+- `-c, --critical`: Critical threshold for consumable usage percentage (default: 0)
+- `-v, --verbose`: Enable verbose debugging output
+
 **Check Types**:
 - `page`: Monitor total page count (default)
 - `consumable`: Monitor toner/ink levels with thresholds
 - `info`: Retrieve printer model and serial number
 
-**Consumable Types**: black, cyan, magenta, yellow, drum
-
-**Thresholds**:
-- `--warning/--critical`: Consumable usage percentage thresholds
+**Consumable Types**: 
+Use with `-o` option when check type is `consumable`:
+- `black`: Black toner/ink cartridge
+- `cyan`: Cyan toner/ink cartridge
+- `magenta`: Magenta toner/ink cartridge
+- `yellow`: Yellow toner/ink cartridge
+- `drum`: Drum unit
 
 **Performance Data**: Page counts, consumable usage percentages
 
