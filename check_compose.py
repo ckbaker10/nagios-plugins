@@ -15,6 +15,7 @@ import subprocess
 import re
 from typing import Tuple, Dict, List, Optional
 from pathlib import Path
+import yaml
 
 # Nagios exit codes
 NAGIOS_OK = 0
@@ -50,6 +51,45 @@ class DockerComposeMonitor:
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise ImportError("Neither 'docker compose' nor 'docker-compose' command found")
     
+    def get_expected_services(self, verbose: bool = False) -> List[str]:
+        """Get list of services defined in compose file"""
+        cmd = self.docker_compose_cmd.copy()
+        
+        if self.project_name:
+            cmd.extend(['-p', self.project_name])
+        
+        if self.compose_file:
+            cmd.extend(['-f', self.compose_file])
+        
+        cmd.extend(['config', '--services'])
+        
+        if verbose:
+            print(f"DEBUG: Getting expected services: {' '.join(cmd)}")
+        
+        original_cwd = None
+        try:
+            if self.compose_dir:
+                original_cwd = Path.cwd()
+                import os
+                os.chdir(self.compose_dir)
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode != 0:
+                raise Exception(f"Failed to get service list: {result.stderr}")
+            
+            services = [s.strip() for s in result.stdout.strip().split('\n') if s.strip()]
+            
+            if verbose:
+                print(f"DEBUG: Expected services: {services}")
+            
+            return services
+            
+        finally:
+            if original_cwd:
+                import os
+                os.chdir(original_cwd)
+    
     def get_services_status(self, verbose: bool = False) -> Dict:
         """Get status of all services in the compose project"""
         cmd = self.docker_compose_cmd.copy()
@@ -69,6 +109,9 @@ class DockerComposeMonitor:
                 Path(self.compose_dir).resolve(strict=True)
             except (OSError, FileNotFoundError):
                 raise Exception(f"Compose directory not found: {self.compose_dir}")
+        
+        # Get expected services first
+        expected_services = self.get_expected_services(verbose)
         
         cmd.extend(['ps', '--format', 'table'])
         
@@ -93,7 +136,33 @@ class DockerComposeMonitor:
             if result.returncode != 0:
                 raise Exception(f"Docker compose command failed: {result.stderr}")
             
-            return self._parse_compose_output(result.stdout, verbose)
+            parsed_data = self._parse_compose_output(result.stdout, verbose)
+            
+            # Check for missing services
+            running_services = {s['service'] for s in parsed_data['services']}
+            missing_services = set(expected_services) - running_services
+            
+            if verbose:
+                print(f"DEBUG: Running services: {running_services}")
+                print(f"DEBUG: Missing services: {missing_services}")
+            
+            # Add missing services to the results
+            missing_count = len(missing_services)
+            if missing_count > 0:
+                for service_name in missing_services:
+                    parsed_data['services'].append({
+                        'name': f'{self.project_name or "unknown"}-{service_name}-?',
+                        'service': service_name,
+                        'status': 'Missing',
+                        'state': 'missing'
+                    })
+                    if verbose:
+                        print(f"DEBUG: Added missing service: {service_name}")
+            
+            parsed_data['total'] = len(expected_services)
+            parsed_data['missing'] = missing_count
+            
+            return parsed_data
             
         except subprocess.TimeoutExpired:
             raise Exception("Docker compose command timed out")
@@ -112,6 +181,7 @@ class DockerComposeMonitor:
                 'running': 0,
                 'unhealthy': 0,
                 'stopped': 0,
+                'missing': 0,
                 'other': 0
             }
         
@@ -127,41 +197,34 @@ class DockerComposeMonitor:
                 continue
             
             # Use regex to parse table format more accurately
-            # Match: NAME (spaces) IMAGE (spaces) COMMAND (spaces) SERVICE (spaces) CREATED (spaces) STATUS (spaces) PORTS
-            
-            # Split on multiple spaces to handle table columns better
             parts = re.split(r'\s{2,}', line.strip())
             if len(parts) < 6:
-                # Fallback to regular split if regex doesn't work
                 parts = line.split()
                 if len(parts) < 6:
                     continue
             
             name = parts[0]
             
-            # Extract service name from container name (format: project-service-number)
+            # Extract service name from container name
             service_match = re.match(r'^.*?-(.+?)-\d+$', name)
             if service_match:
                 service = service_match.group(1)
             else:
-                # Fallback: use the 4th column if available, otherwise extract from name
                 if len(parts) > 3:
                     service = parts[3]
                 else:
                     service = name.split('-')[1] if '-' in name else name
             
-            # Status is typically in column 5 (0-indexed)
+            # Status is typically in column 5
             if len(parts) >= 6:
                 status_text = parts[5]
             else:
-                # Find status in the line by looking for keywords
                 status_match = re.search(r'(Up [^)]*(?:\([^)]*\))?|Exit(?:ed)? \d+|Restarting)', line)
                 if status_match:
                     status_text = status_match.group(1)
                 else:
                     status_text = "unknown"
             
-            # Clean up status text - remove port mappings
             status_clean = re.sub(r'\s*\d+\.\d+\.\d+\.\d+:\d+->\d+/tcp.*$', '', status_text).strip()
             
             # Determine service state
@@ -201,6 +264,7 @@ class DockerComposeMonitor:
             'running': running_count,
             'unhealthy': unhealthy_count,
             'stopped': stopped_count,
+            'missing': 0,  # Will be calculated later
             'other': other_count
         }
 
@@ -231,6 +295,7 @@ def check_compose_status(args) -> Tuple[int, str]:
         running = status_data['running']
         unhealthy = status_data['unhealthy']
         stopped = status_data['stopped']
+        missing = status_data['missing']
         other = status_data['other']
         
         # Determine exit code
@@ -241,15 +306,16 @@ def check_compose_status(args) -> Tuple[int, str]:
             exit_code = NAGIOS_UNKNOWN
             status_prefix = "UNKNOWN"
             status_parts = ["No services found"]
-        elif stopped > 0 or other > 0:
+        elif missing > 0 or stopped > 0 or other > 0:
             exit_code = NAGIOS_CRITICAL
             status_prefix = "CRITICAL"
+            if missing > 0:
+                status_parts.append(f"{missing} missing")
             if stopped > 0:
                 status_parts.append(f"{stopped} stopped")
             if other > 0:
                 status_parts.append(f"{other} in error state")
         elif unhealthy > 0:
-            # Unhealthy services are critical by default, but can be configured as warning
             if args.unhealthy_warning:
                 exit_code = NAGIOS_WARNING
                 status_prefix = "WARNING"
@@ -260,7 +326,7 @@ def check_compose_status(args) -> Tuple[int, str]:
         else:
             exit_code = NAGIOS_OK
             status_prefix = "OK"
-            status_parts.append(f"All {running} services running")
+            status_parts.append(f"All {total} services running")
         
         # Build summary
         summary_parts = []
@@ -268,6 +334,8 @@ def check_compose_status(args) -> Tuple[int, str]:
             summary_parts.append(f"{running} running")
         if unhealthy > 0:
             summary_parts.append(f"{unhealthy} unhealthy")
+        if missing > 0:
+            summary_parts.append(f"{missing} missing")
         if stopped > 0:
             summary_parts.append(f"{stopped} stopped")
         if other > 0:
@@ -283,20 +351,21 @@ def check_compose_status(args) -> Tuple[int, str]:
             f"total={total}",
             f"running={running}",
             f"unhealthy={unhealthy}",
+            f"missing={missing}",
             f"stopped={stopped}",
             f"other={other}"
         ]
         
         status_message += f" | {' '.join(perf_data)}"
         
-        # Add service details if requested and there are issues
+        # Add service details if requested
         if args.show_services and (exit_code != NAGIOS_OK or args.verbose):
             failed_services = []
             for service in status_data['services']:
-                if service['state'] != 'running':
+                if service['state'] not in ['running']:
                     failed_services.append(f"{service['service']}:{service['state']}")
             
-            if failed_services and len(failed_services) <= 5:  # Limit to 5 services
+            if failed_services and len(failed_services) <= 5:
                 status_message += f" - Issues: {', '.join(failed_services)}"
         
         return exit_code, status_message
