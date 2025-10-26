@@ -38,11 +38,15 @@ if [ "$EUID" -eq 0 ]; then
     
     # Copy goss.yaml from /root if it exists
     if [ -f "/root/goss.yaml" ]; then
-        echo "Found goss.yaml in /root - copying to /opt/goss/goss.yaml..."
-        cp /root/goss.yaml /opt/goss/goss.yaml
-        chown "$NAGIOS_USER:$NAGIOS_USER" /opt/goss/goss.yaml
-        chmod 644 /opt/goss/goss.yaml
-        echo "Copied goss.yaml to /opt/goss/goss.yaml"
+        if [ -f "/opt/goss/goss.yaml" ]; then
+            echo "goss.yaml already exists in /opt/goss - skipping copy (not overwriting existing file)"
+        else
+            echo "Found goss.yaml in /root - copying to /opt/goss/goss.yaml..."
+            cp /root/goss.yaml /opt/goss/goss.yaml
+            chown "$NAGIOS_USER:$NAGIOS_USER" /opt/goss/goss.yaml
+            chmod 644 /opt/goss/goss.yaml
+            echo "Copied goss.yaml to /opt/goss/goss.yaml"
+        fi
     else
         echo "No goss.yaml found in /root - skipping copy"
     fi

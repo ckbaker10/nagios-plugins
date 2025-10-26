@@ -102,6 +102,7 @@ check_compose -d <directory> [options]
 - `-d/--directory`: Directory containing docker-compose.yml
 - `--unhealthy-warning`: Treat unhealthy containers as WARNING instead of CRITICAL
 - `--show-services`: Include individual service details in output
+- `--ignore-services`: Comma-separated list of service names to ignore (e.g., 'init-icinga2,backup')
 
 **Status Detection**:
 - **Running**: Service is up and operational
@@ -297,6 +298,9 @@ define command {
 
 # Monitor compose stack with file path
 ./check_compose -f /opt/myapp/docker-compose.yml --unhealthy-warning
+
+# Ignore init containers and backups
+./check_compose -p icinga-playground --ignore-services init-icinga2,backup
 ```
 
 ## Performance Data Format

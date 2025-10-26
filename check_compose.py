@@ -90,8 +90,13 @@ class DockerComposeMonitor:
                 import os
                 os.chdir(original_cwd)
     
-    def get_services_status(self, verbose: bool = False) -> Dict:
-        """Get status of all services in the compose project"""
+    def get_services_status(self, verbose: bool = False, ignore_services: List[str] = None) -> Dict:
+        """Get status of all services in the compose project
+        
+        Args:
+            verbose: Enable verbose output
+            ignore_services: List of service names to ignore in status checks
+        """
         cmd = self.docker_compose_cmd.copy()
         
         # Add project-specific options
@@ -112,6 +117,12 @@ class DockerComposeMonitor:
         
         # Get expected services first
         expected_services = self.get_expected_services(verbose)
+        
+        # Filter out ignored services
+        if ignore_services:
+            if verbose:
+                print(f"DEBUG: Ignoring services: {ignore_services}")
+            expected_services = [s for s in expected_services if s not in ignore_services]
         
         cmd.extend(['ps', '--format', 'table'])
         
@@ -205,13 +216,14 @@ class DockerComposeMonitor:
             
             name = parts[0]
             
-            # Extract service name from container name
-            service_match = re.match(r'^.*?-(.+?)-\d+$', name)
-            if service_match:
-                service = service_match.group(1)
+            # Get service name from SERVICE column (index 3)
+            if len(parts) > 3:
+                service = parts[3]
             else:
-                if len(parts) > 3:
-                    service = parts[3]
+                # Fallback: extract from container name
+                service_match = re.match(r'^.*?-(.+?)-\d+$', name)
+                if service_match:
+                    service = service_match.group(1)
                 else:
                     service = name.split('-')[1] if '-' in name else name
             
@@ -284,8 +296,15 @@ def check_compose_status(args) -> Tuple[int, str]:
             compose_dir=args.compose_dir
         )
         
+        # Parse ignore services list
+        ignore_services = []
+        if args.ignore_services:
+            ignore_services = [s.strip() for s in args.ignore_services.split(',')]
+            if args.verbose:
+                print(f"DEBUG: User specified ignore services: {ignore_services}")
+        
         # Get service status
-        status_data = monitor.get_services_status(verbose=args.verbose)
+        status_data = monitor.get_services_status(verbose=args.verbose, ignore_services=ignore_services)
         
         if args.verbose:
             print(f"DEBUG: Status data: {status_data}")
@@ -391,6 +410,7 @@ Examples:
   %(prog)s -f /path/to/docker-compose.yml
   %(prog)s -d /opt/myapp --show-services
   %(prog)s -p icinga-playground --unhealthy-warning
+  %(prog)s -p icinga-playground --ignore-services init-icinga2,backup
         """
     )
     
@@ -422,6 +442,11 @@ Examples:
         "--show-services",
         action="store_true",
         help="Include service details in output for failed services"
+    )
+    
+    parser.add_argument(
+        "--ignore-services",
+        help="Comma-separated list of service names to ignore (e.g., 'init-icinga2,backup')"
     )
     
     parser.add_argument(
