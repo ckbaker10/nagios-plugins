@@ -357,6 +357,7 @@ check_eap772 -H <hostname> -u <username> -p <password> [options]
 **Optional Arguments**:
 - `--error-threshold`: Error count threshold for warning (default: 100)
 - `--ignore-errors`: Ignore interface error counts in status determination
+- `--ignore-down`: Ignore down interfaces in status determination (useful for statistics tracking)
 - `-i, --interfaces`: Comma-separated list of interfaces to monitor (e.g., 'eth0,br0'). If not specified, monitors default set: eth0, br0, wifi0, wifi1, wifi2, ath0, ath10, ath20
 - `--show-interfaces`: Show interface status in output
 - `-v, --verbose`: Enable verbose output for debugging
@@ -405,6 +406,11 @@ Monitor only specific interfaces:
 check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -i eth0,br0
 ```
 
+Statistics tracking mode (ignore all errors and down interfaces):
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword --ignore-errors --ignore-down
+```
+
 Verbose debugging:
 ```bash
 check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -v
@@ -422,6 +428,9 @@ object CheckCommand "eap772" {
     "--error-threshold" = "$eap772_error_threshold$"
     "--ignore-errors" = {
       set_if = "$eap772_ignore_errors$"
+    }
+    "--ignore-down" = {
+      set_if = "$eap772_ignore_down$"
     }
     "-i" = "$eap772_interfaces$"
     "--show-interfaces" = {
@@ -451,6 +460,18 @@ object Service "EAP772 Critical Interfaces" {
   vars.eap772_interfaces = "eth0,br0"
   vars.eap772_ignore_errors = true
 }
+
+# Example: Statistics tracking (always OK, only collect performance data)
+object Service "EAP772 Statistics" {
+  host_name = "ap-office-3"
+  check_command = "eap772"
+  
+  vars.eap772_host = "10.10.10.233"
+  vars.eap772_username = "monitoring"
+  vars.eap772_password = "MySecurePassword"
+  vars.eap772_ignore_errors = true
+  vars.eap772_ignore_down = true
+}
 ```
 
 **Nagios Configuration Example**:
@@ -465,6 +486,11 @@ define command {
     command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ -i $ARG4$ --ignore-errors
 }
 
+define command {
+    command_name    check_eap772_stats
+    command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ --ignore-errors --ignore-down
+}
+
 define service {
     use                     generic-service
     host_name               ap-office-1
@@ -477,6 +503,13 @@ define service {
     host_name               ap-office-2
     service_description     EAP772 Critical Interfaces
     check_command           check_eap772_filtered!10.10.10.232!monitoring!MySecurePassword!eth0,br0
+}
+
+define service {
+    use                     generic-service
+    host_name               ap-office-3
+    service_description     EAP772 Statistics
+    check_command           check_eap772_stats!10.10.10.233!monitoring!MySecurePassword
 }
 ```
 

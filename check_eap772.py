@@ -225,7 +225,8 @@ def check_eap772(args) -> Tuple[int, str]:
         status_prefix = "OK"
         status_parts = []
         
-        if down_interfaces:
+        # Check for down interfaces (unless --ignore-down is set)
+        if down_interfaces and not args.ignore_down:
             critical_down = [iface for iface in down_interfaces if iface in ['eth0', 'br0']]
             if critical_down:
                 exit_code = NAGIOS_CRITICAL
@@ -292,6 +293,7 @@ Examples:
   %(prog)s -H 10.10.10.231 -u monitoring -p password --error-threshold 1000 -v
   %(prog)s -H 10.10.10.231 -u monitoring -p password --ignore-errors
   %(prog)s -H 10.10.10.231 -u monitoring -p password -i eth0,br0
+  %(prog)s -H 10.10.10.231 -u monitoring -p password --ignore-errors --ignore-down
         """
     )
     
@@ -324,6 +326,12 @@ Examples:
         "--ignore-errors",
         action="store_true",
         help="Ignore interface error counts in status determination"
+    )
+    
+    parser.add_argument(
+        "--ignore-down",
+        action="store_true",
+        help="Ignore down interfaces in status determination (useful for statistics tracking)"
     )
     
     parser.add_argument(
