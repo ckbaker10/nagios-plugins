@@ -4,7 +4,7 @@ My personal nagios plugins, suited for my environment
 
 ## Overview
 
-This repository provides six production-ready monitoring plugins. Each plugin follows standard Nagios conventions with proper exit codes, performance data, and comprehensive error handling.
+These plugins are tested only by me using them in my own environment
 
 ## Available Plugins
 
