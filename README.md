@@ -1,141 +1,86 @@
-# Nagios Plugins Collection## check_gmodem 2
+# Nagios Plugins Collection
 
-Check for Glasfasermodem 2 from Telekom
+A comprehensive collection of Nagios and Icinga monitoring plugins for modern infrastructure.
 
-A comprehensive collection of Nagios/Icinga monitoring plugins for modern infrastructure monitoring.
+## Overview
+
+This repository provides five production-ready monitoring plugins. Each plugin follows standard Nagios conventions with proper exit codes, performance data, and comprehensive error handling.
+
+## Available Plugins
+
+- check_gmodem2 - Telekom Glasfasermodem 2 fiber optic modem monitoring
+- check_p110 - TP-Link P110 smart plug monitoring with KLAP protocol
+- check_jetdirect - Network printer monitoring via SNMP
+- check_goss - Infrastructure validation using Goss framework
+- check_compose - Docker Compose service health monitoring
+
+For detailed plugin documentation see README-CHECKS.md
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.8 or higher
+- UV package manager
+- Nagios or Icinga monitoring system
+- Root or sudo access for installation
+
+### Installation
+
+1. Install UV package manager:
 
 ```
-
-## Quick Start(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_gmodem2 -H 192.168.100.1
-
-OK - FW: 090144.1.0.009 - Link: 1000 - PLOAM: OK - RX: -14.1dBm TX: 2.5dBm | rx_power=-14.07dBm;; tx_power=2.52dBm tx_packets=268340125c rx_packets=53718213c rx_dropped=0c rx_errors=0c tx_bytes=357863307339B rx_bytes=15334274500B
-
-### Prerequisites```
-
-
-
-- Python 3.8+ ## check_p110 
-
-- UV package manager ([installation guide](https://docs.astral.sh/uv/getting-started/installation/))Check for Tapo P110 Switchable Sockets
-
-- Nagios or Icinga monitoring systemSources: https://github.com/mihai-dinculescu/tapo https://github.com/fishbigger/TapoP100
-
-
-
-### Installation```
-
-(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_p110 -H 10.10.10.138 -u "emailaddress@mail.com" -p "Password" 
-
-1. **Install UV** (if not already installed):OK - P05 Mediaserver : Device: ON - Power: 24.7W | signal_level=2;2;1 rssi=-57dBm power=24.664W;; energy_today=482Wh energy_month=12169Wh
-
-```bash```
-
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-```## check_jetdirect 
-
-Original Author : Yoann LAMY - converted to python - debugging bash is horrible
-
-2. **Clone and install plugins**:
-
-```bash```
-
-git clone https://github.com/ckbaker10/nagios-plugins.git /opt/nagios-plugins-lukas(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t page
-
-cd /opt/nagios-plugins-lukasOK - Page count: 143437 | pages=143437;0;0;0
-
-sudo ./install.sh```
-
 ```
 
+2. Clone and install:
+
+```
+git clone https://github.com/ckbaker10/nagios-plugins.git /opt/nagios-plugins-lukas
+cd /opt/nagios-plugins-lukas
+sudo ./install.sh
 ```
 
-3. **Verify installation**:(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t consumable -o black -w 85 -c 90
+3. Verify installation:
 
-```bashOK - Utilisation of the black cartridge: 7% | cons_used=7;85;90;0;100
-
-sudo -u nagios /opt/nagios-plugins-lukas/check_gmodem2 --help```
-
+```
+sudo -u nagios /opt/nagios-plugins-lukas/check_gmodem2 --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_p110 --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_jetdirect --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_goss --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_compose --help
+```
 
-sudo -u nagios /opt/nagios-plugins-lukas/check_jetdirect --help```
-
-sudo -u nagios /opt/nagios-plugins-lukas/check_goss --help(nagios-plugins-lukas) root@mini-lenovo:/opt/nagios-plugins-lukas# python3 check_jetdirect -H 10.10.10.151 -t info
-
-sudo -u nagios /opt/nagios-plugins-lukas/check_compose --helpOK - Info: "hp LaserJet 1320 series" (CNGW53HN8C)
-
-``````
-
-All commands should display help information without errors.
-
-## Plugin Documentation
-
-For detailed information about each plugin, their features, usage examples, and configuration:
-
-**[See README-CHECKS.md](README-CHECKS.md)** for complete plugin documentation
+All commands should display help text without errors.
 
 ## Architecture
 
-This collection uses a wrapper-based architecture for maximum portability:
+This collection uses a wrapper-based architecture:
 
-- **Python Scripts** (`*.py`): Core plugin logic with proper dependency isolation
-- **Wrapper Scripts** (`check_*`): Bash wrappers that activate virtual environment and execute Python scripts
-- **Virtual Environment** (`.venv/`): Isolated Python dependencies managed by UV
-- **Installation Script** (`install.sh`): Automated setup with proper permissions for Nagios user
+- Python Scripts - Core plugin logic with proper dependency isolation
+- Wrapper Scripts - Bash wrappers that activate virtual environment
+- Virtual Environment - Isolated Python dependencies managed by UV
+- Installation Script - Automated setup with proper permissions
 
-## Manual Installation
+## Configuration Examples
 
-If you prefer manual setup:
+### Nagios
 
-```bash
-# Create virtual environment with UV
-uv venv .venv
-
-# Install dependencies
-uv pip install -e .
-
-# Set ownership for Nagios user
-sudo chown -R nagios:nagios /opt/nagios-plugins-lukas
-
-# Make wrapper scripts executable
-sudo chmod +x /opt/nagios-plugins-lukas/check_*
 ```
+define command {
+    command_name    check_gmodem2
+    command_line    /opt/nagios-plugins-lukas/check_gmodem2 -H $HOSTADDRESS$ --rx-power-warning -15
+}
 
-## Supported Plugins
-
-- **check_gmodem2** - Telekom fiber modem monitoring via HTTP API
-- **check_p110** - TP-Link smart plug monitoring with KLAP protocol support  
-- **check_jetdirect** - Network printer monitoring via SNMP
-- **check_goss** - Infrastructure validation using Goss framework
-- **check_compose** - Docker Compose service monitoring
-
-## Docker Setup
-
-For Docker Compose monitoring, see **[DOCKER-SETUP.md](DOCKER-SETUP.md)** for configuring unprivileged access.
-
-## Requirements
-
-All dependencies are automatically managed by UV and installed in an isolated virtual environment. Key dependencies include:
-
-- requests - HTTP client library
-- pycryptodome - Encryption for smart device protocols  
-- pysnmp - SNMP protocol support
-- pydantic - Data validation and parsing
-
-## Integration
-
-### Nagios Configuration
-
-```cfg
 define command {
     command_name    check_p110
     command_line    /opt/nagios-plugins-lukas/check_p110 -H $HOSTADDRESS$ -u $ARG1$ -p $ARG2$
 }
 ```
 
-### Icinga2 Configuration  
+### Icinga2
 
-```cfg
+```
 object CheckCommand "check_compose" {
     import "plugin-check-command"
     command = [ "/opt/nagios-plugins-lukas/check_compose" ]
@@ -146,38 +91,103 @@ object CheckCommand "check_compose" {
 }
 ```
 
+## Usage Examples
+
+### Fiber Modem
+```
+./check_gmodem2 -H 192.168.100.1 --rx-power-warning -15 --rx-power-critical -20
+```
+
+### Smart Plug
+```
+./check_p110 -H 10.10.10.138 -u "user@example.com" -p "password" --expect-on
+```
+
+### Printer
+```
+./check_jetdirect -H printer.domain.com -t consumable -o black -w 85 -c 90
+./check_jetdirect -H printer.domain.com -t page
+```
+
+### Infrastructure Validation
+```
+./check_goss -g /etc/goss/server.yaml --show-failures
+```
+
+### Docker Compose
+```
+./check_compose -p icinga-playground --show-services
+./check_compose -f /opt/myapp/docker-compose.yml --unhealthy-warning
+```
+
+## Docker Setup
+
+The check_compose plugin requires Docker access. The installation script automatically adds the nagios user to the docker group if Docker is installed.
+
+For manual configuration see DOCKER-SETUP.md
+
+Note: Restart Nagios/Icinga service after installation for docker group changes to take effect.
+
+## Dependencies
+
+All dependencies are managed by UV in an isolated virtual environment:
+
+- requests - HTTP client library
+- pycryptodome - Cryptographic functions
+- pysnmp - SNMP protocol implementation
+- pydantic - Data validation
+- pkcs7 - Cryptographic padding
+- urllib3 - HTTP utilities
+
 ## Troubleshooting
 
 ### Permission Issues
-```bash
-# Fix ownership
-sudo chown -R nagios:nagios /opt/nagios-plugins-lukas
 
-# Fix permissions
+```
+sudo chown -R nagios:nagios /opt/nagios-plugins-lukas
 sudo chmod +x /opt/nagios-plugins-lukas/check_*
 ```
 
 ### Virtual Environment Issues
-```bash
-# Recreate virtual environment
+
+```
 cd /opt/nagios-plugins-lukas
-sudo -u nagios uv venv .venv --force
+sudo -u nagios uv venv .venv --clear
 sudo -u nagios uv pip install -e .
 ```
 
-### Test Individual Plugin
-```bash
-# Run with verbose output
+### Docker Access Issues
+
+```
+sudo usermod -aG docker nagios
+sudo systemctl restart nagios
+```
+
+### Test Plugin
+
+```
 sudo -u nagios /opt/nagios-plugins-lukas/check_p110 -H device.local -u user -p pass -v
+```
+
+## Manual Installation
+
+If you prefer manual setup:
+
+```
+uv venv .venv
+uv pip install -e .
+sudo chown -R nagios:nagios /opt/nagios-plugins-lukas
+sudo chmod +x /opt/nagios-plugins-lukas/check_*
+sudo usermod -aG docker nagios
 ```
 
 ## Contributing
 
-1. Follow Nagios plugin conventions (exit codes 0-3)
+1. Follow Nagios plugin conventions
 2. Include performance data in standard format
 3. Provide comprehensive error handling
 4. Add tests and documentation
-5. Update pyproject.toml for new dependencies
+5. Update pyproject.toml for dependencies
 
 ## License
 

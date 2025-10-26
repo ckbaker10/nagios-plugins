@@ -9,6 +9,29 @@ NAGIOS_USER="nagios"
 echo "Setting up Nagios plugins for user: $NAGIOS_USER"
 echo "Plugin directory: $PLUGIN_DIR"
 
+# Check if running as root for optional goss installation
+if [ "$EUID" -eq 0 ]; then
+    # Check if goss is already installed
+    if ! command -v goss &> /dev/null; then
+        echo "Goss not found - installing goss binary..."
+        GOSS_VERSION="v0.4.4"
+        GOSS_URL="https://github.com/goss-org/goss/releases/download/${GOSS_VERSION}/goss-linux-amd64"
+        
+        if curl -L "$GOSS_URL" -o /usr/bin/goss 2>/dev/null; then
+            chmod +x /usr/bin/goss
+            echo "Goss ${GOSS_VERSION} installed successfully to /usr/bin/goss"
+        else
+            echo "WARNING: Failed to download goss. check_goss plugin will require manual goss installation."
+        fi
+    else
+        GOSS_INSTALLED_VERSION=$(goss --version 2>/dev/null || echo "unknown")
+        echo "Goss already installed: $GOSS_INSTALLED_VERSION"
+    fi
+else
+    echo "NOTE: Not running as root - skipping goss binary installation"
+    echo "      Run 'sudo ./install.sh' if you need goss installed"
+fi
+
 # Install UV for nagios user
 echo "Installing UV for nagios user..."
 sudo -u "$NAGIOS_USER" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
