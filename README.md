@@ -4,7 +4,7 @@ My personal nagios plugins, suited for my environment
 
 ## Overview
 
-This repository provides five production-ready monitoring plugins. Each plugin follows standard Nagios conventions with proper exit codes, performance data, and comprehensive error handling.
+This repository provides six production-ready monitoring plugins. Each plugin follows standard Nagios conventions with proper exit codes, performance data, and comprehensive error handling.
 
 ## Available Plugins
 
@@ -13,6 +13,7 @@ This repository provides five production-ready monitoring plugins. Each plugin f
 - check_jetdirect - Network printer monitoring via SNMP
 - check_goss - Infrastructure validation using Goss framework
 - check_compose - Docker Compose service health monitoring
+- check_eap772 - TP-Link Omada EAP772 access point monitoring via SNMPv3
 
 For detailed plugin documentation see README-CHECKS.md
 
@@ -49,6 +50,7 @@ sudo -u nagios /opt/nagios-plugins-lukas/check_p110 --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_jetdirect --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_goss --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_compose --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_eap772 --help
 ```
 
 All commands should display help text without errors.
@@ -123,8 +125,6 @@ object CheckCommand "check_compose" {
 ## Docker Setup
 
 The check_compose plugin requires Docker access. The installation script automatically adds the nagios user to the docker group if Docker is installed.
-
-For manual configuration see DOCKER-SETUP.md
 
 Note: Restart Nagios/Icinga service after installation for docker group changes to take effect.
 

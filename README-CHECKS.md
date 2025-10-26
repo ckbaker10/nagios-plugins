@@ -112,7 +112,7 @@ check_compose -d <directory> [options]
 
 **Performance Data**: Includes total services, running count, unhealthy count, stopped count, and other state count
 
-**Security**: Requires Docker access permissions. See DOCKER-SETUP.md for unprivileged nagios user configuration.
+**Security**: Requires Docker access permissions.
 
 **Common Use Cases**:
 - Container orchestration monitoring
@@ -317,3 +317,164 @@ Use `-v/--verbose` flag for detailed troubleshooting information:
 ```
 
 This provides protocol discovery details, authentication steps, and API response data for problem diagnosis.
+
+---
+
+### check_eap772
+
+**Purpose**: Monitor TP-Link Omada EAP772 access points via SNMPv3 protocol
+
+**Usage**:
+```bash
+check_eap772 -H <hostname> -u <username> -p <password> [options]
+```
+
+**Key Features**:
+- System information monitoring (uptime, description, location, contact)
+- Network interface status tracking (up/down detection)
+- Interface traffic monitoring (bytes in/out with rate calculation)
+- Error rate monitoring (errors, discards per interface)
+- Critical interface validation (eth0, br0 must be operational)
+- Comprehensive performance data for trending
+
+**Required Arguments**:
+- `-H, --host`: Hostname or IP address of the EAP772 access point
+- `-u, --username`: SNMPv3 username (e.g., "monitoring")
+- `-p, --password`: SNMPv3 authentication password (MD5 protocol)
+
+**Optional Arguments**:
+- `-e, --error-warning`: Error rate warning threshold (errors per second, default: 10)
+- `-E, --error-critical`: Error rate critical threshold (errors per second, default: 50)
+- `-d, --discard-warning`: Discard rate warning threshold (discards per second, default: 10)
+- `-D, --discard-critical`: Discard rate critical threshold (discards per second, default: 50)
+- `-v, --verbose`: Enable verbose output for debugging
+
+**SNMPv3 Configuration**:
+- Security Level: authNoPriv (authentication without encryption)
+- Auth Protocol: MD5
+- No encryption protocol required
+- Standard SNMP OIDs used (IF-MIB)
+
+**Performance Data**:
+For each network interface:
+- `{interface}_bytes_in`: Inbound bytes counter
+- `{interface}_bytes_out`: Outbound bytes counter
+- `{interface}_errors_in`: Inbound error counter
+- `{interface}_errors_out`: Outbound error counter
+- `{interface}_discards_in`: Inbound discard counter
+- `{interface}_discards_out`: Outbound discard counter
+- `{interface}_status`: Interface operational status (1=up, 2=down)
+
+**Common Use Cases**:
+- Wireless access point health monitoring
+- Network interface status validation
+- Traffic and error rate trending
+- Critical interface availability tracking (uplink and management)
+
+**Example Commands**:
+
+Basic monitoring:
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword
+```
+
+With custom error thresholds:
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -e 5 -E 20
+```
+
+Verbose debugging:
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -v
+```
+
+**Icinga2 Configuration Example**:
+```
+object CheckCommand "eap772" {
+  command = [ "/opt/nagios-plugins-lukas/check_eap772" ]
+  
+  arguments = {
+    "-H" = "$eap772_host$"
+    "-u" = "$eap772_username$"
+    "-p" = "$eap772_password$"
+    "-e" = "$eap772_error_warning$"
+    "-E" = "$eap772_error_critical$"
+    "-d" = "$eap772_discard_warning$"
+    "-D" = "$eap772_discard_critical$"
+  }
+}
+
+object Service "EAP772 Health" {
+  host_name = "ap-office-1"
+  check_command = "eap772"
+  
+  vars.eap772_host = "10.10.10.231"
+  vars.eap772_username = "monitoring"
+  vars.eap772_password = "MySecurePassword"
+  vars.eap772_error_warning = 10
+  vars.eap772_error_critical = 50
+}
+```
+
+**Nagios Configuration Example**:
+```
+define command {
+    command_name    check_eap772
+    command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ -e $ARG4$ -E $ARG5$
+}
+
+define service {
+    use                     generic-service
+    host_name               ap-office-1
+    service_description     EAP772 Health
+    check_command           check_eap772!10.10.10.231!monitoring!MySecurePassword!10!50
+}
+```
+
+**Monitored SNMP OIDs**:
+- `.1.3.6.1.2.1.1.1.0` - sysDescr (System description)
+- `.1.3.6.1.2.1.1.3.0` - sysUpTime (System uptime)
+- `.1.3.6.1.2.1.1.4.0` - sysContact (System contact)
+- `.1.3.6.1.2.1.1.5.0` - sysName (System name)
+- `.1.3.6.1.2.1.1.6.0` - sysLocation (System location)
+- `.1.3.6.1.2.1.2.2.1.2` - ifDescr (Interface descriptions)
+- `.1.3.6.1.2.1.2.2.1.8` - ifOperStatus (Interface operational status)
+- `.1.3.6.1.2.1.2.2.1.10` - ifInOctets (Inbound byte counter)
+- `.1.3.6.1.2.1.2.2.1.14` - ifInErrors (Inbound error counter)
+- `.1.3.6.1.2.1.2.2.1.16` - ifOutOctets (Outbound byte counter)
+- `.1.3.6.1.2.1.2.2.1.19` - ifInDiscards (Inbound discard counter)
+- `.1.3.6.1.2.1.2.2.1.20` - ifOutErrors (Outbound error counter)
+- `.1.3.6.1.2.1.2.2.1.13` - ifOutDiscards (Outbound discard counter)
+
+**Troubleshooting**:
+
+Common issues and solutions:
+
+1. **SNMPv3 authentication failure**: 
+   - Verify username and password are correct
+   - Confirm auth protocol is MD5 (not SHA)
+   - Security level must be authNoPriv (not authPriv)
+   - Check that SNMPv3 user is configured on the device
+
+2. **SNMP timeout**:
+   - Verify network connectivity to the device
+   - Check firewall rules allow UDP port 161
+   - Confirm SNMP service is enabled on the EAP772
+   - Try with verbose mode to see SNMP command details
+
+3. **Critical interface down**:
+   - eth0 or br0 interfaces are required to be operational
+   - Check physical network connections
+   - Verify device configuration
+   - Review device logs for hardware issues
+
+4. **High error rates**:
+   - Investigate network quality issues
+   - Check for cable problems or interference
+   - Review switch port statistics for duplex mismatches
+   - Adjust thresholds if normal for environment
+
+5. **Missing performance data**:
+   - Ensure SNMP permissions include IF-MIB read access
+   - Verify OID support with snmpwalk testing
+   - Check that interface counters are being updated

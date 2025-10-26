@@ -123,7 +123,7 @@ echo "Testing plugins..."
 
 # Test each plugin
 all_tests_passed=true
-for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose; do
+for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose check_eap772; do
     if [[ -f "$PLUGIN_DIR/$script" ]]; then
         echo -n "  Testing $script: "
         if sudo -u "$NAGIOS_USER" "$PLUGIN_DIR/$script" --help >/dev/null 2>&1; then
@@ -142,8 +142,7 @@ if $all_tests_passed; then
     echo ""
     echo "Next steps:"
     echo "  1. Configure Nagios/Icinga commands using plugin paths"
-    echo "  2. For Docker monitoring, see DOCKER-SETUP.md"
-    echo "  3. For plugin documentation, see README-CHECKS.md"
+    echo "  2. For plugin documentation, see README-CHECKS.md"
     echo ""
     echo "Manual test commands:"
     echo "  sudo -u nagios $PLUGIN_DIR/check_gmodem2 --help"
@@ -151,6 +150,7 @@ if $all_tests_passed; then
     echo "  sudo -u nagios $PLUGIN_DIR/check_jetdirect --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_goss --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_compose --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_eap772 --help"
 else
     echo "WARNING: Some plugins failed testing. Check permissions and dependencies."
     echo "Debug with: sudo -u $NAGIOS_USER $PLUGIN_DIR/check_<plugin> --help"
