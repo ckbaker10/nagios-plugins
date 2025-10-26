@@ -1,6 +1,6 @@
 # Nagios Plugins Collection
 
-A comprehensive collection of Nagios and Icinga monitoring plugins for modern infrastructure.
+My personal nagios plugins, suited for my environment
 
 ## Overview
 
