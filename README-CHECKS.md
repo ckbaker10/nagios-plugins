@@ -355,10 +355,10 @@ check_eap772 -H <hostname> -u <username> -p <password> [options]
 - `-p, --password`: SNMPv3 authentication password (MD5 protocol)
 
 **Optional Arguments**:
-- `-e, --error-warning`: Error rate warning threshold (errors per second, default: 10)
-- `-E, --error-critical`: Error rate critical threshold (errors per second, default: 50)
-- `-d, --discard-warning`: Discard rate warning threshold (discards per second, default: 10)
-- `-D, --discard-critical`: Discard rate critical threshold (discards per second, default: 50)
+- `--error-threshold`: Error count threshold for warning (default: 100)
+- `--ignore-errors`: Ignore interface error counts in status determination
+- `-i, --interfaces`: Comma-separated list of interfaces to monitor (e.g., 'eth0,br0'). If not specified, monitors default set: eth0, br0, wifi0, wifi1, wifi2, ath0, ath10, ath20
+- `--show-interfaces`: Show interface status in output
 - `-v, --verbose`: Enable verbose output for debugging
 
 **SNMPv3 Configuration**:
@@ -390,9 +390,19 @@ Basic monitoring:
 check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword
 ```
 
-With custom error thresholds:
+With custom error threshold:
 ```bash
-check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -e 5 -E 20
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword --error-threshold 1000
+```
+
+Ignore error counts:
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword --ignore-errors
+```
+
+Monitor only specific interfaces:
+```bash
+check_eap772 -H 10.10.10.231 -u monitoring -p MySecurePassword -i eth0,br0
 ```
 
 Verbose debugging:
@@ -409,10 +419,14 @@ object CheckCommand "eap772" {
     "-H" = "$eap772_host$"
     "-u" = "$eap772_username$"
     "-p" = "$eap772_password$"
-    "-e" = "$eap772_error_warning$"
-    "-E" = "$eap772_error_critical$"
-    "-d" = "$eap772_discard_warning$"
-    "-D" = "$eap772_discard_critical$"
+    "--error-threshold" = "$eap772_error_threshold$"
+    "--ignore-errors" = {
+      set_if = "$eap772_ignore_errors$"
+    }
+    "-i" = "$eap772_interfaces$"
+    "--show-interfaces" = {
+      set_if = "$eap772_show_interfaces$"
+    }
   }
 }
 
@@ -423,8 +437,19 @@ object Service "EAP772 Health" {
   vars.eap772_host = "10.10.10.231"
   vars.eap772_username = "monitoring"
   vars.eap772_password = "MySecurePassword"
-  vars.eap772_error_warning = 10
-  vars.eap772_error_critical = 50
+  vars.eap772_error_threshold = 1000
+}
+
+# Example: Monitor only critical interfaces and ignore errors
+object Service "EAP772 Critical Interfaces" {
+  host_name = "ap-office-2"
+  check_command = "eap772"
+  
+  vars.eap772_host = "10.10.10.232"
+  vars.eap772_username = "monitoring"
+  vars.eap772_password = "MySecurePassword"
+  vars.eap772_interfaces = "eth0,br0"
+  vars.eap772_ignore_errors = true
 }
 ```
 
@@ -432,14 +457,26 @@ object Service "EAP772 Health" {
 ```
 define command {
     command_name    check_eap772
-    command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ -e $ARG4$ -E $ARG5$
+    command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ --error-threshold $ARG4$
+}
+
+define command {
+    command_name    check_eap772_filtered
+    command_line    /opt/nagios-plugins-lukas/check_eap772 -H $ARG1$ -u $ARG2$ -p $ARG3$ -i $ARG4$ --ignore-errors
 }
 
 define service {
     use                     generic-service
     host_name               ap-office-1
     service_description     EAP772 Health
-    check_command           check_eap772!10.10.10.231!monitoring!MySecurePassword!10!50
+    check_command           check_eap772!10.10.10.231!monitoring!MySecurePassword!1000
+}
+
+define service {
+    use                     generic-service
+    host_name               ap-office-2
+    service_description     EAP772 Critical Interfaces
+    check_command           check_eap772_filtered!10.10.10.232!monitoring!MySecurePassword!eth0,br0
 }
 ```
 

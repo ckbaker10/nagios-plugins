@@ -141,8 +141,12 @@ class EAP772Monitor:
             'name': self._snmp_get(self.OID_SYSTEM_NAME)
         }
     
-    def get_interfaces(self) -> List[Dict]:
-        """Get interface information"""
+    def get_interfaces(self, interface_filter: List[str] = None) -> List[Dict]:
+        """Get interface information
+        
+        Args:
+            interface_filter: List of interface names to monitor. If None, monitors default set.
+        """
         if_names = self._snmp_walk(self.OID_IF_DESCR)
         if_status = self._snmp_walk(self.OID_IF_OPER_STATUS)
         if_in_octets = self._snmp_walk(self.OID_IF_IN_OCTETS)
@@ -150,11 +154,15 @@ class EAP772Monitor:
         if_in_errors = self._snmp_walk(self.OID_IF_IN_ERRORS)
         if_out_errors = self._snmp_walk(self.OID_IF_OUT_ERRORS)
         
+        # Default interfaces if no filter specified
+        if interface_filter is None:
+            interface_filter = ['eth0', 'br0', 'wifi0', 'wifi1', 'wifi2', 'ath0', 'ath10', 'ath20']
+        
         interfaces = []
         for idx in if_names:
             name = if_names.get(idx, 'unknown')
-            # Only monitor important interfaces
-            if name in ['eth0', 'br0', 'wifi0', 'wifi1', 'wifi2', 'ath0', 'ath10', 'ath20']:
+            # Only monitor specified interfaces
+            if name in interface_filter:
                 status_val = if_status.get(idx, '2')
                 interfaces.append({
                     'name': name,
@@ -187,8 +195,15 @@ def check_eap772(args) -> Tuple[int, str]:
         if args.verbose:
             print(f"DEBUG: System info: {sys_info}")
         
+        # Parse interface filter if provided
+        interface_filter = None
+        if args.interfaces:
+            interface_filter = [iface.strip() for iface in args.interfaces.split(',')]
+            if args.verbose:
+                print(f"DEBUG: Monitoring interfaces: {interface_filter}")
+        
         # Get interface information
-        interfaces = monitor.get_interfaces()
+        interfaces = monitor.get_interfaces(interface_filter)
         
         if not interfaces:
             return NAGIOS_WARNING, "WARNING - No interfaces found"
@@ -197,12 +212,13 @@ def check_eap772(args) -> Tuple[int, str]:
         down_interfaces = [iface['name'] for iface in interfaces if iface['status'] == 'down']
         up_interfaces = [iface['name'] for iface in interfaces if iface['status'] == 'up']
         
-        # Check for errors
+        # Check for errors (unless --ignore-errors is set)
         error_interfaces = []
-        for iface in interfaces:
-            total_errors = iface['in_errors'] + iface['out_errors']
-            if total_errors > args.error_threshold:
-                error_interfaces.append(f"{iface['name']}({total_errors})")
+        if not args.ignore_errors:
+            for iface in interfaces:
+                total_errors = iface['in_errors'] + iface['out_errors']
+                if total_errors > args.error_threshold:
+                    error_interfaces.append(f"{iface['name']}({total_errors})")
         
         # Determine status
         exit_code = NAGIOS_OK
@@ -274,6 +290,8 @@ Examples:
   %(prog)s -H 10.10.10.231 -u monitoring -p password
   %(prog)s -H 10.10.10.231 -u monitoring -p password --show-interfaces
   %(prog)s -H 10.10.10.231 -u monitoring -p password --error-threshold 1000 -v
+  %(prog)s -H 10.10.10.231 -u monitoring -p password --ignore-errors
+  %(prog)s -H 10.10.10.231 -u monitoring -p password -i eth0,br0
         """
     )
     
@@ -300,6 +318,17 @@ Examples:
         type=int,
         default=100,
         help="Error count threshold for warning (default: 100)"
+    )
+    
+    parser.add_argument(
+        "--ignore-errors",
+        action="store_true",
+        help="Ignore interface error counts in status determination"
+    )
+    
+    parser.add_argument(
+        "-i", "--interfaces",
+        help="Comma-separated list of interfaces to monitor (e.g., 'eth0,br0'). If not specified, monitors default set."
     )
     
     parser.add_argument(
