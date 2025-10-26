@@ -2,6 +2,8 @@
 
 My personal nagios plugins, suited for my environment
 
+![Nagios Plugins](pics/rVuPqNb.png)
+
 ## Overview
 
 These plugins are tested only by me using them in my own environment
