@@ -203,7 +203,7 @@ def check_kindle(args) -> Tuple[int, str]:
         # Extract device details
         serial = device.get('serial', args.serial)
         hostname = device.get('hostname', 'unknown')
-        battery_str = device.get('battery_level', '0')
+        battery_raw = device.get('battery_level', 0)
         last_seen = device.get('last_seen')
         model = device.get('model', 'unknown')
         status = device.get('status', 'unknown')
@@ -211,7 +211,12 @@ def check_kindle(args) -> Tuple[int, str]:
         
         # Parse battery level
         try:
-            battery_level = int(battery_str.replace('%', ''))
+            if isinstance(battery_raw, (int, float)):
+                battery_level = int(battery_raw)
+            elif isinstance(battery_raw, str):
+                battery_level = int(battery_raw.replace('%', ''))
+            else:
+                battery_level = 0
         except (ValueError, AttributeError):
             battery_level = 0
         
