@@ -108,7 +108,8 @@ class KindleMonitor:
         Returns:
             Tuple of (device_data, error_message)
         """
-        endpoint = f"/devices/{serial}"
+        # Use monitoring battery endpoint (returns battery + basic status)
+        endpoint = f"/monitoring/battery/{serial}"
         return self._make_request(endpoint)
     
     def test_connection(self) -> Tuple[bool, Optional[str]]:
@@ -190,24 +191,18 @@ def check_kindle(args) -> Tuple[int, str]:
         if not device_data or not isinstance(device_data, dict):
             return NAGIOS_UNKNOWN, "UNKNOWN - Invalid API response format"
         
-        # Check API response success
-        if not device_data.get('success', False):
-            error_msg = device_data.get('error', 'Unknown API error')
-            return NAGIOS_UNKNOWN, f"UNKNOWN - API error: {error_msg}"
-        
-        # Extract device information
+        # Extract device information (monitoring endpoint format)
         device = device_data.get('device', {})
         if not device:
             return NAGIOS_UNKNOWN, "UNKNOWN - No device data in API response"
         
-        # Extract device details
+        # Extract device details from monitoring endpoint
         serial = device.get('serial', args.serial)
         hostname = device.get('hostname', 'unknown')
-        battery_raw = device.get('battery_level', 0)
+        battery_raw = device.get('battery', '0')  # Note: 'battery' not 'battery_level'
         last_seen = device.get('last_seen')
         model = device.get('model', 'unknown')
-        status = device.get('status', 'unknown')
-        is_online = device.get('is_online', False)
+        is_offline = device.get('is_offline', True)  # Note: 'is_offline' not 'is_online'
         
         # Parse battery level
         try:
@@ -227,8 +222,8 @@ def check_kindle(args) -> Tuple[int, str]:
         exit_code = NAGIOS_OK
         status_prefix = "OK"
         
-        # Check online status (is_online is True when device is online)
-        if not is_online:
+        # Check online status (is_offline is True when device is offline)
+        if is_offline:
             exit_code = NAGIOS_CRITICAL
             status_prefix = "CRITICAL"
             status_msg = f"{status_prefix} - {hostname} ({model}) - Device OFFLINE (Last seen: {last_seen_str})"
@@ -242,20 +237,16 @@ def check_kindle(args) -> Tuple[int, str]:
                 status_prefix = "WARNING"
             
             status_msg = f"{status_prefix} - {hostname} ({model}) - Battery: {battery_level}%, Last seen: {last_seen_str}"
-            
-            # Add device status if available
-            if status and status != 'unknown':
-                status_msg += f", Status: {status}"
         
         # Add performance data
         perf_data = []
         perf_data.append(f"battery={battery_level}%;{args.battery_warning};{args.battery_critical};0;100")
-        perf_data.append(f"offline={1 if not is_online else 0}")
+        perf_data.append(f"offline={1 if is_offline else 0}")
         
         # Add device details if requested
         if args.show_details:
-            device_id = device.get('id', 'unknown')
-            status_msg += f" [ID: {device_id}, Serial: {serial}]"
+            ip = device.get('ip', 'unknown')
+            status_msg += f" [IP: {ip}, Serial: {serial}]"
         
         # Append performance data
         final_message = status_msg
