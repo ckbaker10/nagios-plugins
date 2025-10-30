@@ -16,8 +16,9 @@ These plugins are tested only by me using them in my own environment
 - check_goss - Infrastructure validation using Goss framework
 - check_compose - Docker Compose service health monitoring
 - check_eap772 - TP-Link Omada EAP772 access point monitoring via SNMPv3
+- check_kindle - Kindle device monitoring via custom management platform API
 
-For detailed plugin documentation see README-CHECKS.md
+For detailed plugin documentation see [README-CHECKS.md](README-CHECKS.md)
 
 ## Quick Start
 
@@ -53,6 +54,7 @@ sudo -u nagios /opt/nagios-plugins-lukas/check_jetdirect --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_goss --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_compose --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_eap772 --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_kindle --help
 ```
 
 All commands should display help text without errors.
@@ -70,6 +72,8 @@ This collection uses a wrapper-based architecture:
 
 ### Nagios
 
+Add command definitions to your Nagios configuration:
+
 ```
 define command {
     command_name    check_gmodem2
@@ -80,9 +84,83 @@ define command {
     command_name    check_p110
     command_line    /opt/nagios-plugins-lukas/check_p110 -H $HOSTADDRESS$ -u $ARG1$ -p $ARG2$
 }
+
+define command {
+    command_name    check_kindle
+    command_line    /opt/nagios-plugins-lukas/check_kindle -u $ARG1$ -s $ARG2$ --offline-hours $ARG3$
+}
+```
+
+Then reload the Nagios configuration:
+
+```
+sudo systemctl reload nagios
 ```
 
 ### Icinga2
+
+#### Method 1: Manual Configuration
+
+Copy the custom command definitions to your Icinga2 configuration:
+
+```
+sudo cp /opt/nagios-plugins-lukas/icinga-custom-commands/commands-custom.conf /etc/icinga2/conf.d/
+sudo systemctl reload icinga2
+```
+
+Verify the configuration:
+
+```
+sudo icinga2 daemon -C
+```
+
+#### Method 2: Icinga Director Integration (Recommended)
+
+For environments using Icinga Director, follow these steps to import and configure the custom check commands:
+
+1. **Deploy to Global Zone**
+
+   Copy the command definitions to the global zone on your Icinga master (config endpoint):
+   ```
+   sudo cp /opt/nagios-plugins-lukas/icinga-custom-commands/commands-custom.conf \
+       /etc/icinga2/zones.d/global-templates/
+   ```
+
+2. **Import via Director Kickstart Wizard**
+
+   - Navigate to the Director web interface
+   - Go to **Icinga Director** → **Icinga Infrastructure** → **Kickstart Wizard**
+   - Click **Run Import** to sync the configuration
+   - Check the **Activity Log** to verify new commands are staged for deployment
+   - Click **Deploy** to push the configuration to your Icinga infrastructure
+
+3. **Create Service Templates**
+
+   - Navigate to **Director** → **Services** → **Service Templates**
+   - Click **Add** to create a new service template
+   - Select your desired check command (e.g., `check_gmodem2`, `check_p110`, `check_kindle`)
+   - Configure basic service parameters and **Save**
+
+4. **Add Custom Fields**
+
+   - In the service template editor, navigate to the **Fields** tab
+   - Click **Add Field** to define custom parameters for the command
+   - Add variables like `gmodem2_rx_warning`, `p110_email`, `kindle_offline_hours`, etc.
+   - **Save** the field definitions
+
+5. **Configure Service Parameters**
+
+   - Return to the service template main view
+   - Set values for the custom parameters you defined
+   - Configure check intervals, retry logic, and notification settings
+   - **Save** the template
+
+6. **Deploy Configuration**
+
+   - Review pending changes in the **Activity Log**
+   - Click **Deploy** to push the configuration to your Icinga infrastructure
+
+#### Example Director Service Template
 
 ```
 object CheckCommand "check_compose" {
@@ -91,6 +169,7 @@ object CheckCommand "check_compose" {
     arguments = {
         "-p" = "$compose_project$"
         "--show-services" = { set_if = "$compose_show_services$" }
+        "--ignore-services" = "$compose_ignore_services$"
     }
 }
 ```
@@ -122,6 +201,11 @@ object CheckCommand "check_compose" {
 ```
 ./check_compose -p icinga-playground --show-services
 ./check_compose -f /opt/myapp/docker-compose.yml --unhealthy-warning
+```
+
+### Kindle Device
+```
+./check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --offline-hours 8.0
 ```
 
 ## Docker Setup
