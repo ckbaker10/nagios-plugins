@@ -75,6 +75,253 @@ check_p110 -H <hostname> -u <email> -p <password> [options]
 
 ---
 
+### check_kindle
+
+**Purpose**: Monitor Kindle e-reader devices through a custom Kindle management platform API, tracking battery levels, connectivity status, and deep sleep behavior
+
+**Usage**:
+```bash
+check_kindle -u <api_url> -s <serial> [options]
+```
+
+**Key Features**:
+- Device connectivity and online status monitoring
+- Battery level tracking with configurable thresholds
+- Deep sleep mode support with configurable offline grace period
+- Last seen timestamp tracking
+- Device model and hostname identification
+- IP address and serial number reporting
+- SSL/TLS support with optional certificate verification
+
+**Required Arguments**:
+- `-u, --url`: Base URL of the Kindle API (e.g., http://10.10.10.8:22116/api)
+- `-s, --serial`: Kindle device serial number (e.g., B077-XXXX-XXXX)
+
+**Optional Arguments**:
+- `--battery-warning`: Battery level warning threshold in percent (default: 25)
+- `--battery-critical`: Battery level critical threshold in percent (default: 15)
+- `--offline-hours`: Hours device can be offline before triggering CRITICAL (default: 4.0, for deep sleep mode)
+- `--timeout`: HTTP request timeout in seconds (default: 10)
+- `--insecure`: Disable SSL certificate verification
+- `--test-connection`: Test API connectivity before checking device
+- `--show-details`: Show additional device details (IP, serial) in output
+- `-v, --verbose`: Verbose output for debugging
+
+**Deep Sleep Mode Handling**:
+Kindle devices enter deep sleep mode to conserve battery, making them appear offline for extended periods. The `--offline-hours` parameter prevents false alarms:
+- If offline < threshold hours: Status OK with "Device in sleep mode" message
+- If offline > threshold hours: Status CRITICAL with "Device OFFLINE" alert
+- Default: 4.0 hours (adjust based on your devices' sleep patterns)
+
+**Performance Data**:
+- `battery`: Battery level percentage with warning/critical thresholds
+- `offline`: Binary indicator (1=offline, 0=online)
+- `offline_hours`: Actual hours since last seen
+
+**Common Use Cases**:
+- E-reader fleet management
+- Battery level monitoring and maintenance scheduling
+- Device availability tracking with sleep mode awareness
+- Remote device health validation
+
+**Example Commands**:
+
+Basic monitoring with default thresholds:
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX
+```
+
+Custom battery thresholds:
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --battery-warning 20 --battery-critical 10
+```
+
+Allow 8 hours of deep sleep before alerting:
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --offline-hours 8.0
+```
+
+Allow overnight sleep (12 hours):
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --offline-hours 12.0
+```
+
+With SSL and detailed output:
+```bash
+check_kindle -u https://kindle-api.example.com/api -s B077-XXXX-XXXX --show-details
+```
+
+Self-signed certificate support:
+```bash
+check_kindle -u https://10.10.10.8:22116/api -s B077-XXXX-XXXX --insecure
+```
+
+Test API connectivity:
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --test-connection --timeout 30
+```
+
+Verbose debugging:
+```bash
+check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --show-details -v
+```
+
+**Icinga2 Configuration Example**:
+```
+object CheckCommand "check_kindle" {
+  command = [ "/opt/nagios-plugins-lukas/check_kindle" ]
+  
+  arguments = {
+    "-u" = {
+      value = "$kindle_api_url$"
+      required = true
+    }
+    "-s" = {
+      value = "$kindle_serial$"
+      required = true
+    }
+    "--battery-warning" = "$kindle_battery_warning$"
+    "--battery-critical" = "$kindle_battery_critical$"
+    "--offline-hours" = "$kindle_offline_hours$"
+    "--timeout" = "$kindle_timeout$"
+    "--insecure" = {
+      set_if = "$kindle_insecure$"
+    }
+    "--test-connection" = {
+      set_if = "$kindle_test_connection$"
+    }
+    "--show-details" = {
+      set_if = "$kindle_show_details$"
+    }
+    "-v" = {
+      set_if = "$kindle_verbose$"
+    }
+  }
+}
+
+object Service "Kindle Battery" {
+  host_name = "kindle-living-room"
+  check_command = "check_kindle"
+  
+  vars.kindle_api_url = "http://10.10.10.8:22116/api"
+  vars.kindle_serial = "B077-1234-5678"
+  vars.kindle_battery_warning = 25
+  vars.kindle_battery_critical = 15
+  vars.kindle_offline_hours = 8.0
+}
+
+# Example: Monitoring device with overnight sleep allowance
+object Service "Kindle Bedroom" {
+  host_name = "kindle-bedroom"
+  check_command = "check_kindle"
+  
+  vars.kindle_api_url = "http://10.10.10.8:22116/api"
+  vars.kindle_serial = "B077-8765-4321"
+  vars.kindle_offline_hours = 12.0  # Allow overnight sleep
+  vars.kindle_show_details = true
+}
+
+# Example: HTTPS with self-signed certificate
+object Service "Kindle Office" {
+  host_name = "kindle-office"
+  check_command = "check_kindle"
+  
+  vars.kindle_api_url = "https://kindle-api.local/api"
+  vars.kindle_serial = "B077-9999-1111"
+  vars.kindle_insecure = true
+  vars.kindle_timeout = 15
+}
+```
+
+**Nagios Configuration Example**:
+```
+define command {
+    command_name    check_kindle
+    command_line    /opt/nagios-plugins-lukas/check_kindle -u $ARG1$ -s $ARG2$ --battery-warning $ARG3$ --battery-critical $ARG4$ --offline-hours $ARG5$
+}
+
+define command {
+    command_name    check_kindle_basic
+    command_line    /opt/nagios-plugins-lukas/check_kindle -u $ARG1$ -s $ARG2$
+}
+
+define service {
+    use                     generic-service
+    host_name               kindle-living-room
+    service_description     Kindle Battery
+    check_command           check_kindle!http://10.10.10.8:22116/api!B077-1234-5678!25!15!8.0
+}
+
+define service {
+    use                     generic-service
+    host_name               kindle-bedroom
+    service_description     Kindle Status
+    check_command           check_kindle!http://10.10.10.8:22116/api!B077-8765-4321!20!10!12.0
+}
+```
+
+**API Response Format**:
+The plugin expects the API endpoint `/monitoring/battery/{serial}` to return JSON in this format:
+```json
+{
+  "device": {
+    "serial": "B077-XXXX-XXXX",
+    "hostname": "kindle-kt2",
+    "model": "Kindle Touch 2",
+    "battery": "85",
+    "last_seen": "2025-10-30T10:15:30Z",
+    "is_offline": false,
+    "ip": "192.168.1.100"
+  }
+}
+```
+
+**Status Logic**:
+1. **Device Offline**: 
+   - If `is_offline=true` AND `offline_hours > --offline-hours`: CRITICAL
+   - If `is_offline=true` AND `offline_hours ≤ --offline-hours`: OK (sleep mode)
+2. **Device Online**:
+   - Battery ≤ critical threshold: CRITICAL
+   - Battery ≤ warning threshold: WARNING
+   - Otherwise: OK
+
+**Troubleshooting**:
+
+Common issues and solutions:
+
+1. **API connection failed**:
+   - Verify the API URL is correct and accessible
+   - Check network connectivity
+   - Ensure API service is running
+   - Try with `--test-connection` flag
+
+2. **Device not found (404)**:
+   - Verify the serial number is correct
+   - Check that the device is registered in the API
+   - Confirm the API endpoint format matches expectations
+
+3. **SSL certificate verification failed**:
+   - Use `--insecure` flag for self-signed certificates
+   - Or install the proper CA certificate
+   - Or use HTTP instead of HTTPS if acceptable
+
+4. **Timeout errors**:
+   - Increase timeout with `--timeout` option
+   - Check API server performance
+   - Verify network latency
+
+5. **False offline alerts**:
+   - Increase `--offline-hours` threshold to match device sleep patterns
+   - Monitor actual sleep duration in performance data
+   - Consider device-specific sleep schedules
+
+6. **Invalid API response format**:
+   - Enable verbose mode with `-v` to see actual API response
+   - Verify API version compatibility
+   - Check API documentation for expected format
+
+---
+
 ### check_compose
 
 **Purpose**: Monitor Docker Compose services and container health status

@@ -163,6 +163,31 @@ def format_uptime(last_seen: Optional[str]) -> str:
         return "invalid"
 
 
+def get_offline_hours(last_seen: Optional[str]) -> float:
+    """Calculate hours since last seen
+    
+    Args:
+        last_seen: ISO timestamp string or None
+        
+    Returns:
+        Hours since last seen, or float('inf') if never seen
+    """
+    if not last_seen:
+        return float('inf')
+    
+    try:
+        # Parse ISO timestamp
+        last_seen_dt = datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        diff = now - last_seen_dt
+        
+        # Convert to hours
+        return diff.total_seconds() / 3600.0
+            
+    except (ValueError, TypeError):
+        return float('inf')
+
+
 def check_kindle(args) -> Tuple[int, str]:
     """Check Kindle device status and return Nagios result"""
     try:
@@ -217,6 +242,7 @@ def check_kindle(args) -> Tuple[int, str]:
         
         # Format last seen
         last_seen_str = format_uptime(last_seen)
+        offline_hours = get_offline_hours(last_seen)
         
         # Determine device status based on connectivity and battery
         exit_code = NAGIOS_OK
@@ -224,9 +250,16 @@ def check_kindle(args) -> Tuple[int, str]:
         
         # Check online status (is_offline is True when device is offline)
         if is_offline:
-            exit_code = NAGIOS_CRITICAL
-            status_prefix = "CRITICAL"
-            status_msg = f"{status_prefix} - {hostname} ({model}) - Device OFFLINE (Last seen: {last_seen_str})"
+            # Check if device has been offline longer than acceptable threshold
+            if offline_hours > args.offline_hours:
+                exit_code = NAGIOS_CRITICAL
+                status_prefix = "CRITICAL"
+                status_msg = f"{status_prefix} - {hostname} ({model}) - Device OFFLINE (Last seen: {last_seen_str})"
+            else:
+                # Device is offline but within acceptable time window (deep sleep)
+                exit_code = NAGIOS_OK
+                status_prefix = "OK"
+                status_msg = f"{status_prefix} - {hostname} ({model}) - Device in sleep mode (Last seen: {last_seen_str})"
         else:
             # Check battery thresholds
             if battery_level <= args.battery_critical:
@@ -242,6 +275,7 @@ def check_kindle(args) -> Tuple[int, str]:
         perf_data = []
         perf_data.append(f"battery={battery_level}%;{args.battery_warning};{args.battery_critical};0;100")
         perf_data.append(f"offline={1 if is_offline else 0}")
+        perf_data.append(f"offline_hours={offline_hours:.2f}")
         
         # Add device details if requested
         if args.show_details:
@@ -272,6 +306,7 @@ Examples:
   %(prog)s -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX
   %(prog)s -u https://kindle-api.example.com/api -s B077-XXXX-XXXX --insecure
   %(prog)s -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --battery-warning 20 --battery-critical 10
+  %(prog)s -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --offline-hours 8.0
   %(prog)s -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --show-details -v
   %(prog)s -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --test-connection --timeout 30
         """
@@ -301,6 +336,13 @@ Examples:
         type=int,
         default=15,
         help="Battery level critical threshold in percent (default: 15)"
+    )
+    
+    parser.add_argument(
+        "--offline-hours",
+        type=float,
+        default=4.0,
+        help="Hours device can be offline before triggering CRITICAL (default: 4.0, for deep sleep mode)"
     )
     
     parser.add_argument(
