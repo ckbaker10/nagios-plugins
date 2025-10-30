@@ -17,6 +17,8 @@ These plugins are tested only by me using them in my own environment
 - check_compose - Docker Compose service health monitoring
 - check_eap772 - TP-Link Omada EAP772 access point monitoring via SNMPv3
 - check_kindle - Kindle device monitoring via custom management platform API
+- check_smart - SMART drive health monitoring for ATA/SCSI/NVMe devices
+- check_lm_sensors - Hardware sensor monitoring (temperature, fans, voltages) and HDD temperatures
 
 For detailed plugin documentation see [README-CHECKS.md](README-CHECKS.md)
 
@@ -55,6 +57,8 @@ sudo -u nagios /opt/nagios-plugins-lukas/check_goss --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_compose --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_eap772 --help
 sudo -u nagios /opt/nagios-plugins-lukas/check_kindle --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_smart --help
+sudo -u nagios /opt/nagios-plugins-lukas/check_lm_sensors --help
 ```
 
 All commands should display help text without errors.
@@ -208,6 +212,20 @@ object CheckCommand "check_compose" {
 ./check_kindle -u http://10.10.10.8:22116/api -s B077-XXXX-XXXX --offline-hours 8.0
 ```
 
+### SMART Drive Health
+```
+./check_smart -d /dev/sda -i ata
+./check_smart -d /dev/sda -i ata -b 5 -w "Reallocated_Sector_Ct=10"
+./check_smart -g '/dev/sd[a-z]' -i scsi -q
+```
+
+### Hardware Sensors
+```
+./check_lm_sensors --list
+./check_lm_sensors --high temp1=50,60 --high temp2=50,60
+./check_lm_sensors --low fan1=2000,1000 --high 'sda Temp'=50,60
+```
+
 ## Docker Setup
 
 The check_compose plugin requires Docker access. The installation script automatically adds the nagios user to the docker group if Docker is installed.
@@ -259,13 +277,40 @@ sudo -u nagios /opt/nagios-plugins-lukas/check_p110 -H device.local -u user -p p
 
 If you prefer manual setup:
 
-```
+```bash
+# Install dependencies
 uv venv .venv
 uv pip install -e .
+
+# Set permissions
 sudo chown -R nagios:nagios /opt/nagios-plugins-lukas
 sudo chmod +x /opt/nagios-plugins-lukas/check_*
+
+# Add nagios to docker group (for check_compose)
 sudo usermod -aG docker nagios
+
+# Configure sudo rules for check_smart and check_lm_sensors
+sudo tee /etc/sudoers.d/nagios-plugins > /dev/null << 'EOF'
+# Nagios plugins - minimal permissions for hardware monitoring
+# Allow nagios user to run smartctl, sensors, and hddtemp without password
+Defaults:nagios !requiretty
+nagios ALL=(root) NOPASSWD: /usr/sbin/smartctl
+nagios ALL=(root) NOPASSWD: /usr/bin/sensors
+nagios ALL=(root) NOPASSWD: /usr/sbin/hddtemp
+EOF
+
+# Set correct permissions on sudoers file
+sudo chmod 0440 /etc/sudoers.d/nagios-plugins
+
+# Validate sudoers syntax
+sudo visudo -c -f /etc/sudoers.d/nagios-plugins
 ```
+
+**Note:** The paths for `smartctl`, `sensors`, and `hddtemp` may vary by distribution:
+- Debian/Ubuntu: `/usr/sbin/smartctl`, `/usr/bin/sensors`, `/usr/sbin/hddtemp`
+- RHEL/CentOS: Check with `which smartctl sensors hddtemp`
+
+Adjust the sudoers file paths accordingly for your system.
 
 ## Contributing
 

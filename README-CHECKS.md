@@ -550,6 +550,381 @@ define command {
 ./check_compose -p icinga-playground --ignore-services init-icinga2,backup
 ```
 
+---
+
+### check_smart
+
+**Purpose**: Monitor disk drive health using SMART (Self-Monitoring, Analysis and Reporting Technology) for ATA, SCSI, and NVMe devices
+
+**Usage**:
+```bash
+check_smart -d <device> -i <interface> [options]
+check_smart -g <glob_pattern> -i <interface> [options]
+```
+
+**Key Features**:
+- Support for ATA, SCSI, and NVMe drives
+- Hardware RAID support (MegaRAID, 3ware, Areca, HP Smart Array, CCISS, AAC RAID, USB JMicron)
+- Global device checking with pattern matching
+- Comprehensive SMART attribute monitoring
+- Self-test log validation
+- Temperature monitoring with thresholds
+- Load cycle count tracking
+- SSD lifetime monitoring
+- Configurable attribute exclusions
+- Raw value threshold checking
+- Performance data for trending
+
+**Required Arguments**:
+- `-d, --device`: Block device to monitor (e.g., /dev/sda) OR
+- `-g, --global`: Glob pattern for multiple devices (e.g., '/dev/sd[a-z]')
+- `-i, --interface`: Device interface type (required)
+
+**Interface Types**:
+- `auto` - Automatic detection
+- `ata` - ATA/SATA drives
+- `scsi` - SCSI drives
+- `nvme` - NVMe drives
+- `sat` - SATA drives on FreeBSD
+- `megaraid,N` - LSI MegaRAID controller (disk N)
+- `3ware,N` - 3ware RAID controller (port N)
+- `areca,N` - Areca RAID controller
+- `hpt,L/M/N` - HighPoint RocketRAID
+- `cciss,N` - HP Smart Array (CCISS)
+- `aacraid,H,L,ID` - Adaptec/PMC RAID
+- `usbjmicron,N` - USB JMicron bridge
+
+**Optional Arguments**:
+- `-b, --bad`: Threshold for Current_Pending_Sector (ATA) or grown defect list (SCSI)
+- `-w, --warn`: Comma-separated warning thresholds (e.g., "Reallocated_Sector_Ct=10,Current_Pending_Sector=5")
+- `-r, --raw`: Comma-separated list of attributes to check raw values
+- `-e, --exclude`: Comma-separated list of attributes to exclude from checks
+- `-E, --exclude-all`: Comma-separated list of attributes to exclude from checks AND perfdata
+- `-s, --selftest`: Enable self-test log error checking
+- `-l, --ssd-lifetime`: Check Percent_Lifetime_Remain attribute (SSDs)
+- `-O, --oldage`: Ignore old age attributes (unreliable on some drives)
+- `-q, --quiet`: Only show faulted drives when using global check
+- `--skip-self-assessment`: Skip SMART overall health status check
+- `--skip-temp-check`: Skip temperature threshold validation
+- `--skip-load-cycles`: Skip load cycle count alerts (600K safe threshold)
+- `--skip-error-log`: Skip ATA error log checking
+- `--hide-sn`: Hide drive serial number in output
+- `--debug`: Show detailed debugging information
+
+**Default Monitored Attributes (ATA)**:
+- Current_Pending_Sector - Sectors waiting to be remapped
+- Reallocated_Sector_Ct - Count of reallocated sectors
+- Program_Fail_Cnt_Total - Flash program failures (SSDs)
+- Uncorrectable_Error_Cnt - Uncorrectable errors
+- Offline_Uncorrectable - Sectors that could not be corrected offline
+- Runtime_Bad_Block - Runtime bad block detection
+- Reported_Uncorrect - Reported uncorrectable errors
+- Reallocated_Event_Count - Count of remap operations
+- Erase_Fail_Count_Total - Flash erase failures (SSDs)
+- Command_Timeout - Command timeout events
+
+**Default Monitored Attributes (NVMe)**:
+- Media_and_Data_Integrity_Errors - Media and data integrity error count
+
+**Performance Data**:
+All SMART attributes are exported as performance data for historical graphing and trending, including:
+- Raw attribute values
+- Temperature (current and maximum)
+- Start/stop cycle counts
+- Error counters
+- Defect list counts (SCSI)
+
+**Common Use Cases**:
+- Proactive disk failure prediction
+- Drive health monitoring and maintenance scheduling
+- RAID array member validation
+- SSD wear leveling tracking
+- Data center disk fleet management
+- Storage infrastructure health monitoring
+
+**Example Commands**:
+
+Basic ATA drive check:
+```bash
+check_smart -d /dev/sda -i ata
+```
+
+SCSI drive with bad sector threshold:
+```bash
+check_smart -d /dev/sdb -i scsi -b 5
+```
+
+NVMe drive check:
+```bash
+check_smart -d /dev/nvme0n1 -i nvme
+```
+
+Hardware RAID (MegaRAID disk 0):
+```bash
+check_smart -d /dev/sda -i megaraid,0
+```
+
+Multiple MegaRAID disks:
+```bash
+check_smart -d /dev/sda -i 'megaraid,[0-5]'
+```
+
+Global check for all SATA drives:
+```bash
+check_smart -g '/dev/sd[a-z]' -i ata
+```
+
+Global check with quiet mode (only show failures):
+```bash
+check_smart -g '/dev/sd*' -i scsi -q
+```
+
+Custom warning thresholds:
+```bash
+check_smart -d /dev/sda -i ata -w "Reallocated_Sector_Ct=10,Current_Pending_Sector=5"
+```
+
+SSD lifetime monitoring:
+```bash
+check_smart -d /dev/sda -i ata -l
+```
+
+Skip temperature and load cycle checks:
+```bash
+check_smart -d /dev/sda -i ata --skip-temp-check --skip-load-cycles
+```
+
+Enable selftest log checking:
+```bash
+check_smart -d /dev/sda -i ata -s
+```
+
+Exclude specific attributes:
+```bash
+check_smart -d /dev/sda -i ata -e "Power_On_Hours,Temperature_Celsius"
+```
+
+Debug mode:
+```bash
+check_smart -d /dev/sda -i ata --debug
+```
+
+**Icinga2 Configuration Example**:
+```
+object CheckCommand "check_smart" {
+  command = [ "/opt/nagios-plugins-lukas/check_smart" ]
+  
+  arguments = {
+    "-d" = "$smart_device$"
+    "-g" = "$smart_global_pattern$"
+    "-i" = {
+      value = "$smart_interface$"
+      required = true
+    }
+    "-b" = "$smart_bad_threshold$"
+    "-e" = "$smart_exclude$"
+    "-E" = "$smart_exclude_all$"
+    "-r" = "$smart_raw_list$"
+    "-w" = "$smart_warn_list$"
+    "-s" = {
+      set_if = "$smart_selftest$"
+    }
+    "-l" = {
+      set_if = "$smart_ssd_lifetime$"
+    }
+    "-O" = {
+      set_if = "$smart_oldage$"
+    }
+    "-q" = {
+      set_if = "$smart_quiet$"
+    }
+    "--skip-self-assessment" = {
+      set_if = "$smart_skip_self_assessment$"
+    }
+    "--skip-temp-check" = {
+      set_if = "$smart_skip_temp_check$"
+    }
+    "--skip-load-cycles" = {
+      set_if = "$smart_skip_load_cycles$"
+    }
+    "--skip-error-log" = {
+      set_if = "$smart_skip_error_log$"
+    }
+    "--hide-sn" = {
+      set_if = "$smart_hide_sn$"
+    }
+  }
+}
+
+# Example: Monitor single ATA drive
+object Service "SMART /dev/sda" {
+  host_name = "server01"
+  check_command = "check_smart"
+  
+  vars.smart_device = "/dev/sda"
+  vars.smart_interface = "ata"
+  vars.smart_warn_list = "Reallocated_Sector_Ct=10,Current_Pending_Sector=5"
+  vars.smart_selftest = true
+}
+
+# Example: Monitor SSD with lifetime tracking
+object Service "SMART SSD /dev/sdb" {
+  host_name = "server01"
+  check_command = "check_smart"
+  
+  vars.smart_device = "/dev/sdb"
+  vars.smart_interface = "ata"
+  vars.smart_ssd_lifetime = true
+  vars.smart_skip_load_cycles = true
+}
+
+# Example: Monitor MegaRAID array
+object Service "SMART RAID Disks" {
+  host_name = "raid-server"
+  check_command = "check_smart"
+  
+  vars.smart_device = "/dev/sda"
+  vars.smart_interface = "megaraid,[0-7]"
+  vars.smart_bad_threshold = 5
+}
+
+# Example: Global check for all drives
+object Service "SMART All Drives" {
+  host_name = "storage-server"
+  check_command = "check_smart"
+  
+  vars.smart_global_pattern = "/dev/sd*"
+  vars.smart_interface = "scsi"
+  vars.smart_quiet = true
+}
+```
+
+**Nagios Configuration Example**:
+```
+define command {
+    command_name    check_smart
+    command_line    /opt/nagios-plugins-lukas/check_smart -d $ARG1$ -i $ARG2$
+}
+
+define command {
+    command_name    check_smart_thresholds
+    command_line    /opt/nagios-plugins-lukas/check_smart -d $ARG1$ -i $ARG2$ -w $ARG3$
+}
+
+define command {
+    command_name    check_smart_global
+    command_line    /opt/nagios-plugins-lukas/check_smart -g $ARG1$ -i $ARG2$ -q
+}
+
+define service {
+    use                     generic-service
+    host_name               server01
+    service_description     SMART /dev/sda
+    check_command           check_smart!/dev/sda!ata
+}
+
+define service {
+    use                     generic-service
+    host_name               server01
+    service_description     SMART /dev/sdb
+    check_command           check_smart_thresholds!/dev/sdb!ata!Reallocated_Sector_Ct=10,Current_Pending_Sector=5
+}
+
+define service {
+    use                     generic-service
+    host_name               storage-server
+    service_description     SMART All Drives
+    check_command           check_smart_global!/dev/sd*!scsi
+}
+```
+
+**Hardware RAID Examples**:
+
+LSI MegaRAID:
+```bash
+# Single disk
+check_smart -d /dev/sda -i megaraid,0
+
+# Multiple disks
+check_smart -d /dev/sda -i 'megaraid,[0-7]'
+```
+
+3ware RAID:
+```bash
+# Single port
+check_smart -d /dev/sda -i 3ware,0
+
+# Multiple ports
+check_smart -d /dev/sda -i '3ware,[0-3]'
+```
+
+HP Smart Array (CCISS):
+```bash
+check_smart -d /dev/cciss/c0d0 -i cciss,0
+check_smart -d /dev/cciss/c0d0 -i 'cciss,[0-5]'
+```
+
+AAC RAID:
+```bash
+check_smart -d /dev/sda -i aacraid,0,0,0
+check_smart -d /dev/sda -i 'aacraid,[0-3]'
+```
+
+**Troubleshooting**:
+
+Common issues and solutions:
+
+1. **smartctl not found**:
+   - Install smartmontools package: `apt-get install smartmontools` or `yum install smartmontools`
+   - Verify smartctl is in PATH: `which smartctl`
+   - Check system paths: /usr/bin, /usr/sbin, /usr/local/bin
+
+2. **Permission denied**:
+   - Plugin requires root/sudo access to read SMART data
+   - Ensure nagios user can run sudo smartctl
+   - Add to sudoers: `nagios ALL=(ALL) NOPASSWD: /usr/sbin/smartctl`
+
+3. **Device could not be opened**:
+   - Verify device exists: `ls -l /dev/sda`
+   - Check device permissions
+   - Ensure device supports SMART: `smartctl -i /dev/sda`
+   - Try different interface type (ata vs scsi vs auto)
+
+4. **No health status line found**:
+   - Device may not support SMART health status
+   - Use `--skip-self-assessment` to bypass health check
+   - Verify with manual test: `smartctl -H /dev/sda`
+
+5. **False positives on old drives**:
+   - Use `-O` flag to ignore old age attributes
+   - Exclude specific attributes: `-e "attribute_name"`
+   - Adjust warning thresholds: `-w "attribute=value"`
+
+6. **High load cycle count warnings**:
+   - Common on laptop drives (frequent parking)
+   - Use `--skip-load-cycles` to disable alert
+   - Modern drives support millions of cycles
+
+7. **Temperature warnings**:
+   - Use `--skip-temp-check` to disable
+   - Check drive specifications for max temperature
+   - Verify cooling and ventilation
+
+8. **Hardware RAID not detected**:
+   - Verify RAID controller driver is loaded
+   - Check interface syntax matches controller type
+   - Consult smartmontools wiki for specific controller support
+   - Try `smartctl --scan` to detect available devices
+
+**Notes**:
+- Originally developed by Kurt Yoder (Public Domain)
+- Maintained by Claudio Kuenzler
+- Converted to Python 3 by Claude Sonnet 4.5 (Oct 2025)
+- Official documentation: https://www.claudiokuenzler.com/monitoring-plugins/check_smart.php
+- Requires smartmontools (smartctl binary)
+- Global checks do not output perfdata (by design)
+- Supports sudo execution for privilege elevation
+
 ## Performance Data Format
 
 All plugins output performance data in Nagios standard format:
@@ -810,4 +1185,328 @@ Common issues and solutions:
 5. **Missing performance data**:
    - Ensure SNMP permissions include IF-MIB read access
    - Verify OID support with snmpwalk testing
+
+---
+
+### check_lm_sensors
+
+**Purpose**: Monitor hardware sensors (CPU/system temperatures, fan speeds, voltages) using lm_sensors and hard disk temperatures using hddtemp.
+
+**Requirements**:
+- lm_sensors package installed (`sensors` binary)
+- Optional: hddtemp for drive temperature monitoring
+- Sensors must be properly configured (run `sensors-detect` first)
+- Root/sudo access may be required for hddtemp
+
+**Version**: 3.1.0
+
+**Plugin Type**: System Health Monitoring
+
+**Parameters**:
+
+| Parameter | Short | Type | Required | Default | Description |
+|-----------|-------|------|----------|---------|-------------|
+| --high | - | string | No | - | Check for high values: sensor=warn,crit (can be used multiple times) |
+| --low | -l | string | No | - | Check for low values: sensor=warn,crit (can be used multiple times) |
+| --range | -r | string | No | - | Check value range: sensor=warn,crit,reference (can be used multiple times) |
+| --check | -c | string | No | - | Deprecated check syntax (use --high or --range instead) |
+| --rename | - | string | No | - | Rename sensor: newname=oldname (can be used multiple times) |
+| --sanitize | - | flag | No | false | Remove spaces from sensor names |
+| --nosensors | - | flag | No | false | Disable lm_sensors checks |
+| --nodrives | - | flag | No | false | Disable drive temperature checks |
+| --drives | -d | flag | No | false | Enable drive temperature checks (redundant, enabled by default) |
+| --hddtemp_bin | - | string | No | auto-detect | Path to hddtemp binary |
+| --sensors_bin | - | string | No | auto-detect | Path to sensors binary |
+| --list | - | flag | No | false | List all available sensors and exit |
+| --verbose | -v | flag | No | 0 | Verbose output (can be specified multiple times) |
+| --version | - | flag | No | - | Display version and exit |
+
+**Sensor Name Handling**:
+
+Sensors with spaces in their names can be specified in multiple ways:
+- Quoting: `--high 'sda Temp'=50,60`
+- Underscore substitution: `--high sda_Temp=50,60`
+- Sanitize option: `--sanitize --high sdaTemp=50,60`
+
+**Check Types**:
+
+1. **High Checks** (`--high`): Trigger when sensor value exceeds thresholds
+   - Format: `sensor=warning,critical`
+   - Example: `--high temp1=50,60` (warn at 50°C, critical at 60°C)
+   - Use for: CPU temperature, system temperature, voltages
+
+2. **Low Checks** (`--low`): Trigger when sensor value drops below thresholds
+   - Format: `sensor=warning,critical`
+   - Example: `--low fan1=2000,1000` (warn below 2000 RPM, critical below 1000 RPM)
+   - Use for: Fan speeds, minimum voltages
+
+3. **Range Checks** (`--range`): Trigger when sensor deviates from reference value
+   - Format: `sensor=warning_delta,critical_delta,reference`
+   - Example: `--range v1=1,2,12` (warn if outside 11-13V, critical if outside 10-14V)
+   - Use for: Voltages that should stay near specific value
+
+**Exit Codes**:
+- 0 (OK): All sensors within specified thresholds
+- 1 (WARNING): One or more sensors exceeded warning threshold
+- 2 (CRITICAL): One or more sensors exceeded critical threshold
+- 3 (UNKNOWN): Sensor not found or binary not available
+
+**Performance Data**: Yes - All monitored sensors with their current values and thresholds
+
+**Common Sensor Names**:
+- Temperature: `temp1`, `temp2`, `Core 0`, `Core 1`, etc.
+- Fans: `fan1`, `fan2`, `CPU Fan`, `System Fan`, etc.
+- Voltages: `in0`, `in1`, `Vcore`, `+3.3V`, `+5V`, `+12V`, etc.
+- Drives: `sda Temp`, `sdb Temp`, `nvme0 Temp`, etc.
+
+**Common Use Cases**:
+- CPU and motherboard temperature monitoring
+- Fan failure detection
+- Power supply voltage monitoring
+- Hard disk temperature tracking
+- Server room environmental monitoring
+
+**Example Commands**:
+
+List all available sensors:
+```bash
+check_lm_sensors --list
+```
+
+Monitor CPU temperature:
+```bash
+check_lm_sensors --high temp1=50,60 --high temp2=50,60
+```
+
+Monitor fan speeds:
+```bash
+check_lm_sensors --low fan1=2000,1000 --low fan2=2000,1000
+```
+
+Monitor voltages in range:
+```bash
+check_lm_sensors --range in0=0.1,0.2,3.3 --range in1=0.5,1.0,12.0
+```
+
+Monitor drive temperatures:
+```bash
+check_lm_sensors --high 'sda Temp'=50,60 --high 'sdb Temp'=50,60
+```
+
+Only monitor drives (disable sensors):
+```bash
+check_lm_sensors --nosensors --high 'sda Temp'=50,60
+```
+
+Combined monitoring with renamed sensors:
+```bash
+check_lm_sensors --high temp1=50,60 --low fan1=2000,1000 --rename cputemp=temp1 --rename cpufan=fan1
+```
+
+Using sanitized names:
+```bash
+check_lm_sensors --sanitize --high sdaTemp=50,60 --high sdbTemp=50,60
+```
+
+**Icinga2 Configuration Example**:
+```
+object CheckCommand "lm_sensors" {
+  command = [ "/opt/nagios-plugins-lukas/check_lm_sensors" ]
+  
+  arguments = {
+    "--high" = {
+      value = "$lm_sensors_high$"
+      repeat_key = true
+    }
+    "--low" = {
+      value = "$lm_sensors_low$"
+      repeat_key = true
+    }
+    "--range" = {
+      value = "$lm_sensors_range$"
+      repeat_key = true
+    }
+    "--rename" = {
+      value = "$lm_sensors_rename$"
+      repeat_key = true
+    }
+    "--sanitize" = {
+      set_if = "$lm_sensors_sanitize$"
+    }
+    "--nosensors" = {
+      set_if = "$lm_sensors_nosensors$"
+    }
+    "--nodrives" = {
+      set_if = "$lm_sensors_nodrives$"
+    }
+    "-v" = {
+      set_if = "$lm_sensors_verbose$"
+    }
+  }
+}
+
+object Service "sensors-cpu-temp" {
+  host_name = "server01"
+  check_command = "lm_sensors"
+  
+  vars.lm_sensors_high = [
+    "temp1=50,60",
+    "temp2=50,60"
+  ]
+  vars.lm_sensors_rename = [
+    "cpu0=temp1",
+    "cpu1=temp2"
+  ]
+}
+
+object Service "sensors-fans" {
+  host_name = "server01"
+  check_command = "lm_sensors"
+  
+  vars.lm_sensors_low = [
+    "fan1=2000,1000",
+    "fan2=2000,1000"
+  ]
+}
+
+object Service "sensors-drives" {
+  host_name = "server01"
+  check_command = "lm_sensors"
+  
+  vars.lm_sensors_high = [
+    "sda Temp=50,60",
+    "sdb Temp=50,60"
+  ]
+  vars.lm_sensors_nosensors = true
+}
+```
+
+**Nagios Configuration Example**:
+```
+define command {
+    command_name    check_lm_sensors_cpu
+    command_line    /opt/nagios-plugins-lukas/check_lm_sensors --high temp1=50,60 --high temp2=50,60
+}
+
+define command {
+    command_name    check_lm_sensors_fans
+    command_line    /opt/nagios-plugins-lukas/check_lm_sensors --low fan1=2000,1000 --low fan2=2000,1000
+}
+
+define command {
+    command_name    check_lm_sensors_drives
+    command_line    /opt/nagios-plugins-lukas/check_lm_sensors --nosensors --high 'sda Temp'=$ARG1$ --high 'sdb Temp'=$ARG2$
+}
+
+define service {
+    use                     generic-service
+    host_name               server01
+    service_description     CPU Temperature
+    check_command           check_lm_sensors_cpu
+}
+
+define service {
+    use                     generic-service
+    host_name               server01
+    service_description     System Fans
+    check_command           check_lm_sensors_fans
+}
+```
+
+**Setup Requirements**:
+
+1. **Install lm_sensors**:
+```bash
+# Debian/Ubuntu
+apt-get install lm-sensors
+
+# RHEL/CentOS
+yum install lm_sensors
+```
+
+2. **Detect and configure sensors**:
+```bash
+sensors-detect
+# Answer 'yes' to all safe questions
+# Add detected modules to /etc/modules or run modprobe commands
+
+# Test detection
+sensors
+```
+
+3. **Install hddtemp (optional)**:
+```bash
+# Debian/Ubuntu
+apt-get install hddtemp
+
+# RHEL/CentOS
+yum install hddtemp
+```
+
+4. **Grant permissions for drive monitoring**:
+```bash
+# Add nagios user to disk group for hddtemp access
+usermod -a -G disk nagios
+
+# Or configure sudo access
+echo "nagios ALL=(ALL) NOPASSWD: /usr/sbin/hddtemp" >> /etc/sudoers.d/nagios
+```
+
+**Troubleshooting**:
+
+Common issues and solutions:
+
+1. **No sensors found**:
+   - Run `sensors-detect` to detect available sensors
+   - Load required kernel modules: `modprobe <module_name>`
+   - Verify sensors command works: `sensors`
+   - Check that sensor chips are supported by lm_sensors
+
+2. **Sensor not found in check**:
+   - List available sensors: `check_lm_sensors --list`
+   - Check sensor name spelling and capitalization
+   - Try underscore vs. space in sensor name
+   - Use `--sanitize` option to remove spaces
+
+3. **hddtemp not working**:
+   - Verify hddtemp is installed: `which hddtemp`
+   - Test manually: `hddtemp /dev/sda`
+   - Check disk permissions: `ls -l /dev/sda`
+   - Add nagios user to disk group or configure sudo
+   - Some drives don't support temperature reporting
+
+4. **Permission denied errors**:
+   - For drives: Add nagios user to disk group
+   - For sensors: Usually accessible to all users
+   - Check file permissions: `/sys/class/hwmon/*`
+   - Use sudo wrapper if necessary
+
+5. **Incorrect sensor values**:
+   - Verify with manual sensors command: `sensors`
+   - Check sensor configuration: `/etc/sensors3.conf`
+   - Some sensors may need calibration
+   - Consult motherboard documentation for correct sensor mappings
+
+6. **JSON parsing errors** (sensors version issue):
+   - Requires lm_sensors version 3.5.0 or higher for JSON support
+   - Check version: `sensors --version`
+   - Upgrade lm_sensors if needed
+   - On older systems, consider using the Perl version
+
+**Performance Data Format**:
+```
+sensor1=value;warn;crit;; sensor2=value;warn;crit;;
+```
+
+Example:
+```
+temp1=45;50;60;; fan1=2500;2000;1000;; in0=3.32;3.2;3.1;;
+```
+
+**Attribution**: 
+- Original Perl version: Copyright (c) 2007, ETH Zurich
+- Converted to Python: 2025
+- License: GNU General Public License (GPL) version 3
+
+---
    - Check that interface counters are being updated

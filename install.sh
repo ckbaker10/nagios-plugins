@@ -50,9 +50,40 @@ if [ "$EUID" -eq 0 ]; then
     else
         echo "No goss.yaml found in /root - skipping copy"
     fi
+    
+    # Configure sudo rules for check_smart and check_lm_sensors
+    echo "Configuring sudo rules for check_smart and check_lm_sensors..."
+    SUDOERS_FILE="/etc/sudoers.d/nagios-plugins"
+    
+    # Find paths to required binaries
+    SMARTCTL_PATH=$(which smartctl 2>/dev/null || echo "/usr/sbin/smartctl")
+    SENSORS_PATH=$(which sensors 2>/dev/null || echo "/usr/bin/sensors")
+    HDDTEMP_PATH=$(which hddtemp 2>/dev/null || echo "/usr/sbin/hddtemp")
+    
+    # Create sudoers file with NOPASSWD rules
+    cat > "$SUDOERS_FILE" << EOF
+# Nagios plugins - minimal permissions for hardware monitoring
+# Allow nagios user to run smartctl, sensors, and hddtemp without password
+Defaults:$NAGIOS_USER !requiretty
+$NAGIOS_USER ALL=(root) NOPASSWD: $SMARTCTL_PATH
+$NAGIOS_USER ALL=(root) NOPASSWD: $SENSORS_PATH
+$NAGIOS_USER ALL=(root) NOPASSWD: $HDDTEMP_PATH
+EOF
+    
+    # Set correct permissions on sudoers file
+    chmod 0440 "$SUDOERS_FILE"
+    
+    # Validate sudoers syntax
+    if visudo -c -f "$SUDOERS_FILE" >/dev/null 2>&1; then
+        echo "Sudo rules configured successfully in $SUDOERS_FILE"
+    else
+        echo "ERROR: Invalid sudoers syntax, removing file"
+        rm -f "$SUDOERS_FILE"
+        echo "WARNING: check_smart and check_lm_sensors will require manual sudo configuration"
+    fi
 else
-    echo "NOTE: Not running as root - skipping goss binary installation"
-    echo "      Run 'sudo ./install.sh' if you need goss installed"
+    echo "NOTE: Not running as root - skipping goss binary installation and sudo configuration"
+    echo "      Run 'sudo ./install.sh' if you need goss installed or sudo rules configured"
 fi
 
 # Install UV for nagios user
@@ -166,7 +197,7 @@ echo "Testing plugins..."
 
 # Test each plugin
 all_tests_passed=true
-for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose check_eap772; do
+for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose check_eap772 check_kindle check_smart check_lm_sensors; do
     if [[ -f "$PLUGIN_DIR/$script" ]]; then
         echo -n "  Testing $script: "
         if sudo -u "$NAGIOS_USER" "$PLUGIN_DIR/$script" --help >/dev/null 2>&1; then
@@ -194,6 +225,9 @@ if $all_tests_passed; then
     echo "  sudo -u nagios $PLUGIN_DIR/check_goss --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_compose --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_eap772 --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_kindle --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_smart --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_lm_sensors --help"
 else
     echo "WARNING: Some plugins failed testing. Check permissions and dependencies."
     echo "Debug with: sudo -u $NAGIOS_USER $PLUGIN_DIR/check_<plugin> --help"
