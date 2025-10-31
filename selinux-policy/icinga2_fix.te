@@ -1,0 +1,220 @@
+# checkmodule -M -m -o icinga2_fix.mod icinga2_fix.te
+# semodule_package -o icinga2_fix.pp -m icinga2_fix.mod
+# semodule -i icinga2_fix.pp
+#
+# Comprehensive SELinux policy for Icinga2 monitoring on RHEL/Rocky Linux 8+
+# Allows Icinga2 to:
+#   - Monitor system processes and services
+#   - Query systemd service status
+#   - Read hardware sensors
+#   - Connect to network services on non-standard ports
+#   - Execute system control commands (systemctl, rpm)
+#   - Access various filesystem types
+
+module icinga2_fix 1.6;
+
+require {
+        type system_dbusd_t;
+        type rpcbind_t;
+        type initrc_exec_t;
+        type unconfined_service_t;
+        type systemd_logind_t;
+        type fail2ban_t;
+        type crond_t;
+        type chronyd_t;
+        type auditd_t;
+        type setroubleshootd_t;
+        type pstore_t;
+        type initrc_t;
+        type mysqld_t;
+        type policykit_t;
+        type fs_t;
+        type named_t;
+        type sysfs_t;
+        type icinga2_t;
+        type udev_t;
+        type rngd_t;
+        type gssproxy_t;
+        type unconfined_t;
+        type getty_t;
+        type nagios_spool_t;
+        type NetworkManager_t;
+        type devpts_t;
+        type rpm_exec_t;
+        type sshd_t;
+        type kernel_t;
+        type tuned_t;
+        type systemd_systemctl_exec_t;
+        type firewalld_t;
+        type syslogd_t;
+        type httpd_t;
+        type initrc_var_run_t;
+        type unreserved_port_t;
+        type bpf_t;
+        type var_lib_nfs_t;
+        type rpc_pipefs_t;
+        type dosfs_t;
+        type tmpfs_t;
+        type autofs_t;
+        type mysqld_unit_file_t;
+        type httpd_unit_file_t;
+        type binfmt_misc_fs_t;
+        type init_t;
+        type sysctl_fs_t;
+        type debugfs_t;
+        type systemd_unit_file_t;
+        type rpm_var_lib_t;
+        type hugetlbfs_t;
+        class dir { getattr open read search };
+        class file { execute execute_no_trans getattr ioctl lock map open read };
+        class lnk_file read;
+        class filesystem getattr;
+        class service status;
+        class system status;
+        class tcp_socket name_connect;
+}
+
+#============= icinga2_t ==============
+
+# Network connectivity for checks (non-standard ports)
+allow icinga2_t unreserved_port_t:tcp_socket name_connect;
+
+# Hardware monitoring access
+allow icinga2_t sysfs_t:file { read open };
+
+# BPF filesystem access
+allow icinga2_t bpf_t:dir getattr;
+allow icinga2_t bpf_t:filesystem getattr;
+
+# Filesystem access
+allow icinga2_t devpts_t:filesystem getattr;
+allow icinga2_t fs_t:filesystem getattr;
+allow icinga2_t pstore_t:filesystem getattr;
+allow icinga2_t tmpfs_t:filesystem getattr;
+allow icinga2_t binfmt_misc_fs_t:filesystem getattr;
+allow icinga2_t debugfs_t:filesystem getattr;
+allow icinga2_t dosfs_t:filesystem getattr;
+allow icinga2_t hugetlbfs_t:filesystem getattr;
+allow icinga2_t rpc_pipefs_t:filesystem getattr;
+
+# Directory access
+allow icinga2_t autofs_t:dir getattr;
+allow icinga2_t binfmt_misc_fs_t:dir getattr;
+allow icinga2_t dosfs_t:dir getattr;
+allow icinga2_t hugetlbfs_t:dir getattr;
+allow icinga2_t rpc_pipefs_t:dir getattr;
+allow icinga2_t sysctl_fs_t:dir search;
+allow icinga2_t systemd_unit_file_t:dir { open read search };
+
+# NFS access
+allow icinga2_t var_lib_nfs_t:dir search;
+
+# RPM database access
+allow icinga2_t rpm_var_lib_t:dir search;
+allow icinga2_t rpm_var_lib_t:file { open map };
+
+# Process and service monitoring - directory access
+allow icinga2_t NetworkManager_t:dir { getattr search };
+allow icinga2_t auditd_t:dir { getattr search };
+allow icinga2_t chronyd_t:dir { getattr search };
+allow icinga2_t crond_t:dir { getattr search };
+allow icinga2_t fail2ban_t:dir { getattr search };
+allow icinga2_t firewalld_t:dir { getattr search };
+allow icinga2_t getty_t:dir { getattr search };
+allow icinga2_t gssproxy_t:dir { getattr search };
+allow icinga2_t httpd_t:dir { getattr search };
+allow icinga2_t initrc_t:dir { getattr search };
+allow icinga2_t kernel_t:dir { getattr search };
+allow icinga2_t mysqld_t:dir { getattr search };
+allow icinga2_t named_t:dir { getattr search };
+allow icinga2_t policykit_t:dir { getattr search };
+allow icinga2_t pstore_t:dir getattr;
+allow icinga2_t rngd_t:dir { getattr search };
+allow icinga2_t rpcbind_t:dir { getattr search };
+allow icinga2_t setroubleshootd_t:dir { getattr search };
+allow icinga2_t sshd_t:dir { getattr search };
+allow icinga2_t syslogd_t:dir { getattr search };
+allow icinga2_t system_dbusd_t:dir { getattr search };
+allow icinga2_t systemd_logind_t:dir { getattr search };
+allow icinga2_t tuned_t:dir { getattr search };
+allow icinga2_t udev_t:dir { getattr search };
+allow icinga2_t unconfined_service_t:dir { getattr search };
+allow icinga2_t unconfined_t:dir { getattr search };
+
+# Process and service monitoring - file read access
+allow icinga2_t NetworkManager_t:file { getattr read open };
+allow icinga2_t auditd_t:file { getattr read open };
+allow icinga2_t chronyd_t:file { getattr read open };
+allow icinga2_t crond_t:file { getattr read open };
+allow icinga2_t fail2ban_t:file { getattr read open };
+allow icinga2_t firewalld_t:file { getattr read open };
+allow icinga2_t getty_t:file { getattr read open };
+allow icinga2_t gssproxy_t:file { getattr read open };
+allow icinga2_t httpd_t:file { getattr read open };
+allow icinga2_t initrc_t:file { getattr read open };
+allow icinga2_t kernel_t:file { getattr read open };
+allow icinga2_t mysqld_t:file { getattr read open };
+allow icinga2_t named_t:file { getattr read open };
+allow icinga2_t policykit_t:file { getattr read open };
+allow icinga2_t rngd_t:file { getattr read open };
+allow icinga2_t rpcbind_t:file { getattr read open };
+allow icinga2_t setroubleshootd_t:file { getattr read open };
+allow icinga2_t sshd_t:file { getattr read open };
+allow icinga2_t syslogd_t:file { getattr read open };
+allow icinga2_t system_dbusd_t:file { getattr read open };
+allow icinga2_t systemd_logind_t:file { getattr read open };
+allow icinga2_t tuned_t:file { getattr read open };
+allow icinga2_t udev_t:file { getattr read open };
+allow icinga2_t unconfined_service_t:file { getattr read open };
+allow icinga2_t unconfined_t:file { getattr read open };
+
+# Process and service monitoring - symlink access
+allow icinga2_t NetworkManager_t:lnk_file read;
+allow icinga2_t auditd_t:lnk_file read;
+allow icinga2_t chronyd_t:lnk_file read;
+allow icinga2_t crond_t:lnk_file read;
+allow icinga2_t fail2ban_t:lnk_file read;
+allow icinga2_t firewalld_t:lnk_file read;
+allow icinga2_t getty_t:lnk_file read;
+allow icinga2_t gssproxy_t:lnk_file read;
+allow icinga2_t httpd_t:lnk_file read;
+allow icinga2_t initrc_t:lnk_file read;
+allow icinga2_t kernel_t:lnk_file read;
+allow icinga2_t mysqld_t:lnk_file read;
+allow icinga2_t named_t:lnk_file read;
+allow icinga2_t policykit_t:lnk_file read;
+allow icinga2_t rngd_t:lnk_file read;
+allow icinga2_t rpcbind_t:lnk_file read;
+allow icinga2_t setroubleshootd_t:lnk_file read;
+allow icinga2_t sshd_t:lnk_file read;
+allow icinga2_t syslogd_t:lnk_file read;
+allow icinga2_t system_dbusd_t:lnk_file read;
+allow icinga2_t systemd_logind_t:lnk_file read;
+allow icinga2_t tuned_t:lnk_file read;
+allow icinga2_t udev_t:lnk_file read;
+allow icinga2_t unconfined_service_t:lnk_file read;
+allow icinga2_t unconfined_t:lnk_file read;
+
+# Init system access
+allow icinga2_t init_t:file { getattr open read };
+allow icinga2_t init_t:lnk_file read;
+allow icinga2_t init_t:system status;
+
+# Init and system control
+allow icinga2_t initrc_exec_t:file { getattr map open read };
+allow icinga2_t initrc_exec_t:service status;
+allow icinga2_t initrc_var_run_t:file { read open lock };
+allow icinga2_t systemd_systemctl_exec_t:file { execute execute_no_trans getattr open read map };
+
+# Systemd unit file access
+allow icinga2_t systemd_unit_file_t:file getattr;
+allow icinga2_t systemd_unit_file_t:service status;
+allow icinga2_t httpd_unit_file_t:file getattr;
+allow icinga2_t httpd_unit_file_t:service status;
+allow icinga2_t mysqld_unit_file_t:file getattr;
+allow icinga2_t mysqld_unit_file_t:service status;
+
+# Nagios/Icinga specific
+allow icinga2_t nagios_spool_t:file { getattr read open ioctl };
+allow icinga2_t rpm_exec_t:file { getattr execute execute_no_trans open read map };
+
