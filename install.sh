@@ -6,8 +6,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR=$SCRIPT_DIR
 NAGIOS_USER="nagios"
 
+echo "=========================================="
+echo "Nagios Plugins Installation Script"
+echo "=========================================="
+echo ""
+
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "Detected OS: $NAME ${VERSION_ID:-unknown}"
+    echo "OS ID: $ID"
+    
+    # Check for supported distributions
+    case "$ID" in
+        ubuntu|debian)
+            echo "Distribution: Debian-based (compatible)"
+            ;;
+        rocky|rhel|centos|fedora|almalinux)
+            echo "Distribution: RHEL-based (compatible)"
+            if [[ "$VERSION_ID" =~ ^8 ]]; then
+                echo "Version: 8.x series detected"
+            fi
+            ;;
+        *)
+            echo "WARNING: Untested distribution - script may need adjustments"
+            ;;
+    esac
+else
+    echo "WARNING: Cannot detect OS distribution"
+fi
+
+echo ""
 echo "Setting up Nagios plugins for user: $NAGIOS_USER"
 echo "Plugin directory: $PLUGIN_DIR"
+echo ""
 
 # Check if running as root for optional goss installation
 if [ "$EUID" -eq 0 ]; then
@@ -55,10 +87,58 @@ if [ "$EUID" -eq 0 ]; then
     echo "Configuring sudo rules for check_smart and check_lm_sensors..."
     SUDOERS_FILE="/etc/sudoers.d/nagios-plugins"
     
-    # Find paths to required binaries
-    SMARTCTL_PATH=$(which smartctl 2>/dev/null || echo "/usr/sbin/smartctl")
-    SENSORS_PATH=$(which sensors 2>/dev/null || echo "/usr/bin/sensors")
-    HDDTEMP_PATH=$(which hddtemp 2>/dev/null || echo "/usr/sbin/hddtemp")
+    # Detect OS for distribution-specific paths
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID="$ID"
+        OS_VERSION_ID="$VERSION_ID"
+        echo "Detected OS: $NAME ${VERSION_ID:-unknown}"
+    else
+        OS_ID="unknown"
+        echo "WARNING: Cannot detect OS, assuming generic paths"
+    fi
+    
+    # Find paths to required binaries (check multiple locations)
+    SMARTCTL_PATH=$(command -v smartctl 2>/dev/null)
+    if [ -z "$SMARTCTL_PATH" ]; then
+        # Try common paths for different distributions
+        for path in /usr/sbin/smartctl /sbin/smartctl /usr/local/sbin/smartctl; do
+            if [ -x "$path" ]; then
+                SMARTCTL_PATH="$path"
+                break
+            fi
+        done
+        # Default fallback
+        SMARTCTL_PATH="${SMARTCTL_PATH:-/usr/sbin/smartctl}"
+    fi
+    
+    SENSORS_PATH=$(command -v sensors 2>/dev/null)
+    if [ -z "$SENSORS_PATH" ]; then
+        # Try common paths
+        for path in /usr/bin/sensors /bin/sensors /usr/local/bin/sensors; do
+            if [ -x "$path" ]; then
+                SENSORS_PATH="$path"
+                break
+            fi
+        done
+        SENSORS_PATH="${SENSORS_PATH:-/usr/bin/sensors}"
+    fi
+    
+    HDDTEMP_PATH=$(command -v hddtemp 2>/dev/null)
+    if [ -z "$HDDTEMP_PATH" ]; then
+        # Try common paths
+        for path in /usr/sbin/hddtemp /sbin/hddtemp /usr/local/sbin/hddtemp; do
+            if [ -x "$path" ]; then
+                HDDTEMP_PATH="$path"
+                break
+            fi
+        done
+        HDDTEMP_PATH="${HDDTEMP_PATH:-/usr/sbin/hddtemp}"
+    fi
+    
+    echo "  smartctl path: $SMARTCTL_PATH"
+    echo "  sensors path: $SENSORS_PATH"
+    echo "  hddtemp path: $HDDTEMP_PATH"
     
     # Create sudoers file with NOPASSWD rules
     cat > "$SUDOERS_FILE" << EOF
@@ -80,6 +160,56 @@ EOF
         echo "ERROR: Invalid sudoers syntax, removing file"
         rm -f "$SUDOERS_FILE"
         echo "WARNING: check_smart and check_lm_sensors will require manual sudo configuration"
+    fi
+    
+    # Provide distribution-specific package installation hints if binaries are missing
+    if [ ! -x "$SMARTCTL_PATH" ]; then
+        echo ""
+        echo "WARNING: smartctl not found. Install smartmontools package:"
+        case "$OS_ID" in
+            rocky|rhel|centos|fedora)
+                echo "  sudo dnf install smartmontools"
+                ;;
+            debian|ubuntu)
+                echo "  sudo apt-get install smartmontools"
+                ;;
+            *)
+                echo "  Install smartmontools package for your distribution"
+                ;;
+        esac
+    fi
+    
+    if [ ! -x "$SENSORS_PATH" ]; then
+        echo ""
+        echo "WARNING: sensors not found. Install lm_sensors package:"
+        case "$OS_ID" in
+            rocky|rhel|centos|fedora)
+                echo "  sudo dnf install lm_sensors"
+                ;;
+            debian|ubuntu)
+                echo "  sudo apt-get install lm-sensors"
+                ;;
+            *)
+                echo "  Install lm_sensors package for your distribution"
+                ;;
+        esac
+    fi
+    
+    if [ ! -x "$HDDTEMP_PATH" ]; then
+        echo ""
+        echo "WARNING: hddtemp not found. Install hddtemp package:"
+        case "$OS_ID" in
+            rocky|rhel|centos|fedora)
+                echo "  sudo dnf install hddtemp"
+                echo "  (Note: hddtemp may need EPEL repository on Rocky/RHEL)"
+                ;;
+            debian|ubuntu)
+                echo "  sudo apt-get install hddtemp"
+                ;;
+            *)
+                echo "  Install hddtemp package for your distribution"
+                ;;
+        esac
     fi
 else
     echo "NOTE: Not running as root - skipping goss binary installation and sudo configuration"
@@ -121,6 +251,12 @@ echo "Nagios user '$NAGIOS_USER' exists"
 if command -v docker &> /dev/null; then
     echo "Docker found - adding '$NAGIOS_USER' user to docker group..."
     if ! groups "$NAGIOS_USER" | grep -q docker; then
+        # Check if docker group exists, create if needed (for some minimal installations)
+        if ! getent group docker >/dev/null; then
+            echo "Docker group doesn't exist, creating it..."
+            groupadd docker
+        fi
+        
         usermod -aG docker "$NAGIOS_USER"
         echo "Added '$NAGIOS_USER' to docker group for Docker Compose monitoring"
         
@@ -136,6 +272,11 @@ if command -v docker &> /dev/null; then
             systemctl restart nagios
             service_restarted=true
             echo "Nagios service restarted successfully"
+        elif systemctl is-active --quiet nagios4 2>/dev/null; then
+            echo "Restarting Nagios4 service to apply docker group changes..."
+            systemctl restart nagios4
+            service_restarted=true
+            echo "Nagios4 service restarted successfully"
         fi
         
         if [ "$service_restarted" = false ]; then

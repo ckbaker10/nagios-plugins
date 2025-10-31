@@ -32,6 +32,9 @@ dependencies = [
     "requests>=2.25.0",
     "urllib3>=1.26.0",
     
+    # System monitoring
+    "psutil>=5.8.0",
+    
     # Cryptography for TP-Link P110 encryption
     "pycryptodome>=3.15.0",
     "pkcs7>=0.1.2",
