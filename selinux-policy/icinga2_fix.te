@@ -1,7 +1,6 @@
-# checkmodule -M -m -o icinga2_fix.mod icinga2_fix.te
-# semodule_package -o icinga2_fix.pp -m icinga2_fix.mod
-# semodule -i icinga2_fix.pp
-#
+# checkmodule -M -m -o icinga2_fix.mod icinga2_fix.te;semodule_package -o icinga2_fix.pp -m icinga2_fix.mod;semodule -i icinga2_fix.pp;systemctl restart icinga2
+# cat /var/log/audit/audit.log | grep denied | grep icinga2 | audit2allow | uv run semerge.py -i icinga2_fix.te -o icinga2_fix_new.te
+
 # Comprehensive SELinux policy for Icinga2 monitoring on RHEL/Rocky Linux 8+
 # Allows Icinga2 to:
 #   - Monitor system processes and services
@@ -11,7 +10,7 @@
 #   - Execute system control commands (systemctl, rpm)
 #   - Access various filesystem types
 
-module icinga2_fix 1.6;
+module icinga2_fix 1.12;
 
 require {
         type system_dbusd_t;
@@ -41,6 +40,7 @@ require {
         type NetworkManager_t;
         type devpts_t;
         type rpm_exec_t;
+        type rpm_t;
         type sshd_t;
         type kernel_t;
         type tuned_t;
@@ -100,6 +100,7 @@ allow icinga2_t rpc_pipefs_t:filesystem getattr;
 # Directory access
 allow icinga2_t autofs_t:dir getattr;
 allow icinga2_t binfmt_misc_fs_t:dir getattr;
+allow icinga2_t debugfs_t:dir { getattr open read search };
 allow icinga2_t dosfs_t:dir getattr;
 allow icinga2_t hugetlbfs_t:dir getattr;
 allow icinga2_t rpc_pipefs_t:dir getattr;
@@ -110,6 +111,7 @@ allow icinga2_t systemd_unit_file_t:dir { open read search };
 allow icinga2_t var_lib_nfs_t:dir search;
 
 # RPM database access
+allow icinga2_t rpm_t:dir search;
 allow icinga2_t rpm_var_lib_t:dir search;
 allow icinga2_t rpm_var_lib_t:file { open map };
 
