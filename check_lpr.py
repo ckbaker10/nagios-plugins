@@ -12,6 +12,8 @@ Dependencies:
 
 Copyright (C) 2024 - GPLv3 License
 Original C version: Copyright (c) 2002 Scott Lurndal
+
+Fixed to actually work https://github.com/ckbaker10
 """
 
 import argparse

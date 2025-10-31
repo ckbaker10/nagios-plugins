@@ -83,8 +83,8 @@ if [ "$EUID" -eq 0 ]; then
         echo "No goss.yaml found in /root - skipping copy"
     fi
     
-    # Configure sudo rules for check_smart and check_lm_sensors
-    echo "Configuring sudo rules for check_smart and check_lm_sensors..."
+    # Configure sudo rules for check_smart, check_lm_sensors, and check_lpr
+    echo "Configuring sudo rules for check_smart, check_lm_sensors, and check_lpr..."
     SUDOERS_FILE="/etc/sudoers.d/nagios-plugins"
     
     # Detect OS for distribution-specific paths
@@ -124,7 +124,9 @@ if [ "$EUID" -eq 0 ]; then
         SENSORS_PATH="${SENSORS_PATH:-/usr/bin/sensors}"
     fi
     
-    HDDTEMP_PATH=$(command -v hddtemp 2>/dev/null)
+    # Note: command -v hddtemp was found to hang in some environments
+    # Using type -p as alternative which is more reliable
+    HDDTEMP_PATH=$(type -p hddtemp 2>/dev/null || true)
     if [ -z "$HDDTEMP_PATH" ]; then
         # Try common paths
         for path in /usr/sbin/hddtemp /sbin/hddtemp /usr/local/sbin/hddtemp; do
@@ -142,12 +144,13 @@ if [ "$EUID" -eq 0 ]; then
     
     # Create sudoers file with NOPASSWD rules
     cat > "$SUDOERS_FILE" << EOF
-# Nagios plugins - minimal permissions for hardware monitoring
-# Allow nagios user to run smartctl, sensors, and hddtemp without password
+# Nagios plugins - minimal permissions for hardware monitoring and LPR
+# Allow nagios user to run smartctl, sensors, hddtemp, and check_lpr without password
 Defaults:$NAGIOS_USER !requiretty
 $NAGIOS_USER ALL=(root) NOPASSWD: $SMARTCTL_PATH
 $NAGIOS_USER ALL=(root) NOPASSWD: $SENSORS_PATH
 $NAGIOS_USER ALL=(root) NOPASSWD: $HDDTEMP_PATH
+$NAGIOS_USER ALL=(root) NOPASSWD: $PLUGIN_DIR/check_lpr
 EOF
     
     # Set correct permissions on sudoers file
@@ -159,7 +162,7 @@ EOF
     else
         echo "ERROR: Invalid sudoers syntax, removing file"
         rm -f "$SUDOERS_FILE"
-        echo "WARNING: check_smart and check_lm_sensors will require manual sudo configuration"
+        echo "WARNING: check_smart, check_lm_sensors, and check_lpr will require manual sudo configuration"
     fi
     
     # Provide distribution-specific package installation hints if binaries are missing
@@ -331,6 +334,104 @@ fi
 echo "Setting ownership to '$NAGIOS_USER' user..."
 chown -R "$NAGIOS_USER:$NAGIOS_USER" "$PLUGIN_DIR"
 
+# Configure capabilities for check_lpr (alternative to sudo, more secure)
+if [ "$EUID" -eq 0 ]; then
+    echo ""
+    echo "Configuring network bind capabilities for check_lpr..."
+    
+    # Find the real Python binary (venv uses symlinks, but setcap requires real files)
+    PYTHON_SYMLINK="$PLUGIN_DIR/.venv/bin/python"
+    PYTHON_REAL=""
+    
+    if [ -L "$PYTHON_SYMLINK" ]; then
+        # Resolve the symlink to get the real Python binary
+        PYTHON_REAL=$(readlink -f "$PYTHON_SYMLINK" 2>/dev/null)
+        echo "  Detected venv Python symlink: $PYTHON_SYMLINK -> $PYTHON_REAL"
+    fi
+    
+    # Check if setcap is available
+    if command -v setcap &> /dev/null; then
+        if [ -n "$PYTHON_REAL" ] && [ -f "$PYTHON_REAL" ]; then
+            # Create a dedicated Python copy for this venv to avoid modifying system Python
+            PYTHON_COPY="$PLUGIN_DIR/.venv/bin/python3-privileged"
+            
+            echo "  Creating isolated Python binary for privileged port binding..."
+            echo "  (This avoids granting capabilities to system-wide Python)"
+            
+            # Copy the Python binary to the venv
+            if cp "$PYTHON_REAL" "$PYTHON_COPY" 2>/dev/null; then
+                chown "$NAGIOS_USER:$NAGIOS_USER" "$PYTHON_COPY"
+                chmod 755 "$PYTHON_COPY"
+                
+                # Set capability on the copy
+                if setcap 'cap_net_bind_service=+ep' "$PYTHON_COPY" 2>/dev/null; then
+                    echo "  ✓ Successfully set CAP_NET_BIND_SERVICE on $PYTHON_COPY"
+                    
+                    # Verify the capability
+                    if getcap "$PYTHON_COPY" | grep -q cap_net_bind_service; then
+                        echo "  ✓ Verified: $(getcap "$PYTHON_COPY")"
+                        
+                        # Update check_lpr wrapper to use the privileged Python
+                        if [ -f "$PLUGIN_DIR/check_lpr" ]; then
+                            cat > "$PLUGIN_DIR/check_lpr" << 'WRAPPER_EOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Use the privileged Python binary if available, otherwise fall back to regular python
+if [ -x "$SCRIPT_DIR/.venv/bin/python3-privileged" ]; then
+    exec "$SCRIPT_DIR/.venv/bin/python3-privileged" "$SCRIPT_DIR/check_lpr.py" "$@"
+else
+    # Fallback to regular venv python (will need sudo for privileged ports)
+    source "$SCRIPT_DIR/.venv/bin/activate"
+    exec python "$SCRIPT_DIR/check_lpr.py" "$@"
+fi
+WRAPPER_EOF
+                            chmod +x "$PLUGIN_DIR/check_lpr"
+                            chown "$NAGIOS_USER:$NAGIOS_USER" "$PLUGIN_DIR/check_lpr"
+                            echo "  ✓ Updated check_lpr wrapper to use privileged Python"
+                            echo ""
+                            echo "  check_lpr can now bind to privileged ports without sudo!"
+                        fi
+                    fi
+                else
+                    echo "  WARNING: Failed to set capability on $PYTHON_COPY"
+                    rm -f "$PYTHON_COPY"
+                    echo "  check_lpr will need to be run with sudo"
+                fi
+            else
+                echo "  WARNING: Failed to copy Python binary"
+                echo "  check_lpr will need to be run with sudo"
+            fi
+        else
+            echo "  WARNING: Could not resolve Python binary location"
+            echo "  check_lpr will need to be run with sudo"
+        fi
+    else
+        echo "  WARNING: setcap command not found"
+        
+        # Detect OS for distribution-specific hints
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            OS_ID_CAP="$ID"
+        else
+            OS_ID_CAP="unknown"
+        fi
+        
+        echo "  Install libcap2-bin (Debian/Ubuntu) or libcap (RHEL/Rocky) package:"
+        case "$OS_ID_CAP" in
+            rocky|rhel|centos|fedora)
+                echo "    sudo dnf install libcap"
+                ;;
+            debian|ubuntu)
+                echo "    sudo apt-get install libcap2-bin"
+                ;;
+            *)
+                echo "    Install libcap or libcap2-bin package for your distribution"
+                ;;
+        esac
+        echo "  For now, check_lpr must be run with sudo"
+    fi
+fi
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -370,7 +471,11 @@ if $all_tests_passed; then
     echo "  sudo -u nagios $PLUGIN_DIR/check_smart --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_lm_sensors --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_space_usage --help"
-    echo "  sudo -u nagios $PLUGIN_DIR/check_lpr --help"
+    echo ""
+    echo "Test check_lpr (requires privileged port binding):"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_lpr -H localhost --help"
+    echo "  sudo $PLUGIN_DIR/check_lpr -H printserver.local -q lp"
+    echo "  (Note: If CAP_NET_BIND_SERVICE was set, nagios user can run without sudo)"
 else
     echo "WARNING: Some plugins failed testing. Check permissions and dependencies."
     echo "Debug with: sudo -u $NAGIOS_USER $PLUGIN_DIR/check_<plugin> --help"

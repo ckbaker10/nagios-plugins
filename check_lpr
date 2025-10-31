@@ -1,4 +1,10 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/.venv/bin/activate"
-exec python3 "$SCRIPT_DIR/check_lpr.py" "$@"
+# Use the privileged Python binary if available, otherwise fall back to regular python
+if [ -x "$SCRIPT_DIR/.venv/bin/python3-privileged" ]; then
+    exec "$SCRIPT_DIR/.venv/bin/python3-privileged" "$SCRIPT_DIR/check_lpr.py" "$@"
+else
+    # Fallback to regular venv python (will need sudo for privileged ports)
+    source "$SCRIPT_DIR/.venv/bin/activate"
+    exec python "$SCRIPT_DIR/check_lpr.py" "$@"
+fi
