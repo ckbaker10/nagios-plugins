@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.6"
+# dependencies = []
+# ///
 """
 SELinux Policy Merger
 
@@ -29,11 +33,13 @@ class SELinuxPolicyMerger:
         if not lines:
             return None
         
-        header = lines[0].strip()
-        # module resnet-nrpe 1.45;
-        match = re.match(r'^module\s+([\w\-_]+)\s+([\d\.]+);$', header)
-        if match:
-            return match.group(1), match.group(2)
+        # Search for module declaration in the file (usually near the top)
+        for line in lines[:50]:  # Check first 50 lines
+            line = line.strip()
+            # module resnet-nrpe 1.45;
+            match = re.match(r'^module\s+([\w\-_]+)\s+([\d\.]+);$', line)
+            if match:
+                return match.group(1), match.group(2)
         return None
     
     def parse_policy(self, lines: List[str]):
@@ -174,9 +180,6 @@ EXAMPLES:
             if header:
                 stdin_name, stdin_version = header
             merger.parse_policy(stdin_lines)
-        else:
-            print("No input from stdin", file=sys.stderr)
-            sys.exit(1)
     
     # Read from input file if specified
     if args.input:
@@ -189,12 +192,14 @@ EXAMPLES:
                 if header:
                     file_name, file_version = header
                 merger.parse_policy(file_lines)
-            else:
-                print(f"Empty file {args.input}", file=sys.stderr)
-                sys.exit(1)
         except IOError as e:
             print(f"Can't open {args.input} for reading: {e}", file=sys.stderr)
             sys.exit(1)
+    
+    # Require at least one input source
+    if not args.input and sys.stdin.isatty():
+        print("Must provide input via -i flag or STDIN", file=sys.stderr)
+        sys.exit(1)
     
     # Determine module name (priority: arg > file > stdin)
     module_name = args.name or file_name or stdin_name
