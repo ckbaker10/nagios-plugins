@@ -99,7 +99,8 @@ if [ "$EUID" -eq 0 ]; then
     fi
     
     # Find paths to required binaries (check multiple locations)
-    SMARTCTL_PATH=$(command -v smartctl 2>/dev/null)
+    # Note: Using '|| true' to prevent script exit with 'set -e' when binary not found
+    SMARTCTL_PATH=$(type -p smartctl 2>/dev/null || true)
     if [ -z "$SMARTCTL_PATH" ]; then
         # Try common paths for different distributions
         for path in /usr/sbin/smartctl /sbin/smartctl /usr/local/sbin/smartctl; do
@@ -112,7 +113,7 @@ if [ "$EUID" -eq 0 ]; then
         SMARTCTL_PATH="${SMARTCTL_PATH:-/usr/sbin/smartctl}"
     fi
     
-    SENSORS_PATH=$(command -v sensors 2>/dev/null)
+    SENSORS_PATH=$(type -p sensors 2>/dev/null || true)
     if [ -z "$SENSORS_PATH" ]; then
         # Try common paths
         for path in /usr/bin/sensors /bin/sensors /usr/local/bin/sensors; do
@@ -124,8 +125,7 @@ if [ "$EUID" -eq 0 ]; then
         SENSORS_PATH="${SENSORS_PATH:-/usr/bin/sensors}"
     fi
     
-    # Note: command -v hddtemp was found to hang in some environments
-    # Using type -p as alternative which is more reliable
+    # Note: type -p is used instead of command -v which was found to hang in some environments
     HDDTEMP_PATH=$(type -p hddtemp 2>/dev/null || true)
     if [ -z "$HDDTEMP_PATH" ]; then
         # Try common paths
