@@ -338,7 +338,7 @@ echo "Testing plugins..."
 
 # Test each plugin
 all_tests_passed=true
-for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose check_eap772 check_kindle check_smart check_lm_sensors; do
+for script in check_p110 check_jetdirect check_goss check_gmodem2 check_compose check_eap772 check_kindle check_smart check_lm_sensors check_space_usage check_lpr; do
     if [[ -f "$PLUGIN_DIR/$script" ]]; then
         echo -n "  Testing $script: "
         if sudo -u "$NAGIOS_USER" "$PLUGIN_DIR/$script" --help >/dev/null 2>&1; then
@@ -369,6 +369,8 @@ if $all_tests_passed; then
     echo "  sudo -u nagios $PLUGIN_DIR/check_kindle --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_smart --help"
     echo "  sudo -u nagios $PLUGIN_DIR/check_lm_sensors --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_space_usage --help"
+    echo "  sudo -u nagios $PLUGIN_DIR/check_lpr --help"
 else
     echo "WARNING: Some plugins failed testing. Check permissions and dependencies."
     echo "Debug with: sudo -u $NAGIOS_USER $PLUGIN_DIR/check_<plugin> --help"

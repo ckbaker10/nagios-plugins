@@ -19,6 +19,8 @@ These plugins are tested only by me using them in my own environment
 - check_kindle - Kindle device monitoring via custom management platform API
 - check_smart - SMART drive health monitoring for ATA/SCSI/NVMe devices
 - check_lm_sensors - Hardware sensor monitoring (temperature, fans, voltages) and HDD temperatures
+- check_space_usage - Disk space usage analysis by directory (respects mount points, excludes network mounts)
+- check_lpr - LPD/LPR printer daemon protocol testing (RFC 1179)
 
 For detailed plugin documentation see [README-CHECKS.md](README-CHECKS.md)
 

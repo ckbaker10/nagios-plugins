@@ -1510,3 +1510,339 @@ temp1=45;50;60;; fan1=2500;2000;1000;; in0=3.32;3.2;3.1;;
 
 ---
    - Check that interface counters are being updated
+   
+## check_space_usage
+
+### Purpose
+Analyzes disk space usage by directory to identify which directories are consuming the most space. Respects mount points to ensure mounted filesystems are not counted towards their parent directories. Automatically excludes network mounts (CIFS, NFS).
+
+### Features
+- **Mount Point Aware**: Uses `du --one-file-system` to respect filesystem boundaries
+- **Network Mount Exclusion**: Automatically detects and excludes CIFS/NFS/SMB mounts
+- **Configurable Depth**: Scan subdirectories to specified depth level
+- **Top N Reporting**: Report only the top directories by size
+- **Threshold Support**: Optional warning/critical thresholds for filesystem usage
+- **Performance Data**: Detailed perfdata including top directories
+- **Compact/Detailed Output**: Choose between summary or detailed listing
+
+### Usage
+```bash
+./check_space_usage -p <path> [options]
+```
+
+### Parameters
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| -p, --path | No | / | Path to analyze |
+| -d, --depth | No | 2 | Maximum directory depth to analyze |
+| -t, --top | No | 10 | Number of top directories to report |
+| -w, --warning | No | None | Warning threshold for filesystem usage (%) |
+| -c, --critical | No | None | Critical threshold for filesystem usage (%) |
+| -e, --exclude | No | None | Exclude paths (can be repeated) |
+| --show-details | No | False | Show detailed list in output |
+| -v, --verbose | No | False | Verbose debugging output |
+
+### Examples
+
+**Basic Usage**:
+```bash
+./check_space_usage -p /
+```
+
+**With Depth and Top N**:
+```bash
+./check_space_usage -p / --depth 3 --top 15
+```
+
+**With Thresholds**:
+```bash
+./check_space_usage -p /var -w 80 -c 90 --top 10
+```
+
+**With Exclusions**:
+```bash
+./check_space_usage -p / --exclude /tmp --exclude /var/tmp --depth 2
+```
+
+**Detailed Output**:
+```bash
+./check_space_usage -p / --show-details --top 5
+```
+
+**Verbose Debug Mode**:
+```bash
+./check_space_usage -p /var/lib --depth 2 -v
+```
+
+### Icinga2 Configuration
+
+```
+object CheckCommand "check_space_usage" {
+    import "plugin-check-command"
+    command = [ "/opt/nagios-plugins-lukas/check_space_usage" ]
+    arguments = {
+        "-p" = "$space_usage_path$"
+        "-d" = "$space_usage_depth$"
+        "-t" = "$space_usage_top$"
+        "-w" = "$space_usage_warning$"
+        "-c" = "$space_usage_critical$"
+        "-e" = {
+            value = "$space_usage_exclude$"
+            repeat_key = true
+        }
+        "--show-details" = {
+            set_if = "$space_usage_show_details$"
+        }
+    }
+    vars.space_usage_path = "/"
+    vars.space_usage_depth = 2
+    vars.space_usage_top = 10
+}
+```
+
+### Example Output
+
+**Compact Format**:
+```
+OK - /: 53.9GB/58.0GB (93.0%) used | Top 3: /var: 12.7GB, /opt: 11.9GB, /usr: 8.5GB | used=57821143040B;;;0;62235250688 percent=93.0%;;;0;100
+```
+
+**Detailed Format**:
+```
+OK - /: 53.9GB/58.0GB (93.0%) used | Top 10 directories:
+  1. /var: 12.7GB
+  2. /opt: 11.9GB [MOUNT]
+  3. /usr: 8.5GB
+  4. /home: 5.2GB
+  5. /root: 2.1GB
+  ...
+```
+
+### Mount Point Handling
+
+The plugin automatically detects mount points using `psutil.disk_partitions()`. For each mount point:
+- Local filesystems (ext4, xfs, etc.): Shows used space from the mounted filesystem
+- Network mounts (CIFS, NFS): **Completely excluded from analysis**
+
+Example system with multiple mounts:
+```
+/                       ext4    (analyzed)
+├── /var/lib/docker     ext4    (treated as separate mount)
+├── /var/lib/opensearch ext4    (treated as separate mount)
+└── /mnt/docushare      cifs    (excluded - network mount)
+```
+
+### Network Mount Detection
+
+Automatically excludes these filesystem types:
+- `cifs` - Common Internet File System (SMB/CIFS shares)
+- `nfs` / `nfs4` - Network File System
+- `smbfs` - SMB filesystem
+- `davfs` - WebDAV filesystem  
+- `fuse.sshfs` - SSHFS mounts
+
+### Performance Data
+
+```
+used=<bytes>B;;;0;<total>
+percent=<percent>%;warn;crit;0;100
+dir1_<path>=<bytes>B;;;;
+dir2_<path>=<bytes>B;;;;
+...
+```
+
+### Troubleshooting
+
+**Problem**: Analysis takes too long
+- **Solution**: Reduce `--depth` parameter or exclude large directories
+
+**Problem**: Permission denied errors
+- **Solution**: Run as root or with appropriate permissions to read all directories
+
+**Problem**: Network mount included in analysis
+- **Solution**: Network mounts should be auto-detected. Use `--verbose` to see detection logic. If needed, use `--exclude /mnt/share`
+
+**Problem**: Mount points not respected
+- **Solution**: Verify `du` command works correctly with `--one-file-system` flag
+
+**Problem**: Inaccurate sizes
+- **Solution**: Check if directory is under a network mount. These are excluded by default.
+
+### Dependencies
+- Python 3.8+
+- psutil (for mount point detection)
+
+---
+
+## check_lpr
+
+### Purpose
+Tests LPD (Line Printer Daemon) protocol connectivity and queue status. Implements RFC 1179 "Line Printer Daemon Protocol" by sending a short-form queue status request.
+
+### Features
+- **RFC 1179 Compliant**: Uses proper source port range (721-731)
+- **Queue Status Query**: Sends 0x03 (short queue status) command
+- **Timeout Support**: Configurable connection and response timeouts
+- **Privilege Detection**: Clear error messages for permission issues
+- **Response Time Tracking**: Performance data for monitoring trends
+
+### Usage
+```bash
+sudo ./check_lpr -H <host> [options]
+```
+
+**Note**: This plugin requires root privileges to bind to ports 721-731 as specified by RFC 1179.
+
+### Parameters
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| -H, --host | Yes | None | Hostname or IP of LPD server |
+| -p, --port | No | 515 | LPD server port |
+| -s, --source | No | 730 | Source port to bind (721-731) |
+| -q, --queue | No | pr2 | Queue name to check |
+| -t, --timeout | No | 10 | Connection timeout in seconds |
+| -v, --verbose | No | False | Verbose debugging output |
+
+### Examples
+
+**Basic Usage**:
+```bash
+sudo ./check_lpr -H printer.domain.com
+```
+
+**Custom Queue and Port**:
+```bash
+sudo ./check_lpr -H 192.168.1.100 -q lp -s 725
+```
+
+**With Timeout**:
+```bash
+sudo ./check_lpr -H printserver -p 515 -q main_queue -t 15
+```
+
+**Verbose Debug**:
+```bash
+sudo ./check_lpr -H printer.local -q pr2 -v
+```
+
+### Icinga2 Configuration
+
+```
+object CheckCommand "check_lpr" {
+    import "plugin-check-command"
+    command = [ "/opt/nagios-plugins-lukas/check_lpr" ]
+    arguments = {
+        "-H" = {
+            value = "$lpr_host$"
+            required = true
+        }
+        "-p" = "$lpr_port$"
+        "-s" = "$lpr_source_port$"
+        "-q" = "$lpr_queue$"
+        "-t" = "$lpr_timeout$"
+    }
+    vars.lpr_host = "$address$"
+    vars.lpr_port = 515
+    vars.lpr_source_port = 730
+    vars.lpr_queue = "pr2"
+}
+```
+
+**Important**: Configure sudo permissions for the nagios user:
+```bash
+# /etc/sudoers.d/nagios-lpr
+nagios ALL=(root) NOPASSWD: /opt/nagios-plugins-lukas/check_lpr
+```
+
+Or modify the command in Icinga to use sudo:
+```
+command = [ "sudo", "/opt/nagios-plugins-lukas/check_lpr" ]
+```
+
+### Example Output
+
+**Success**:
+```
+OK - LPD: queue is ready and printing (0.034s response) | response_time=0.034s;;;0
+```
+
+**Connection Refused**:
+```
+CRITICAL - Connection refused by printer.domain.com:515 (0.002s response) | response_time=0.002s;;;0
+```
+
+**Permission Error**:
+```
+UNKNOWN - Permission denied binding to port 730. Run as root or use sudo. (0.000s response) | response_time=0.000s;;;0
+```
+
+### RFC 1179 Requirements
+
+The LPD protocol (RFC 1179) requires that clients connect from a privileged source port in the range 721-731. This is a security measure to prevent unauthorized access to printer queues.
+
+**Port Range**: 721-731  
+**Default Used**: 730  
+**Privilege Required**: root (or CAP_NET_BIND_SERVICE on Linux)
+
+### Protocol Details
+
+The plugin sends a short-form queue status request:
+```
+Format: <0x03><queue_name><newline>
+Example: 0x03pr2\n
+```
+
+The LPD server responds with queue status information. Any response is considered successful (OK), as it indicates the daemon is running and responding.
+
+### Performance Data
+
+```
+response_time=<seconds>s;;;0
+```
+
+### Troubleshooting
+
+**Problem**: Permission denied binding to port
+- **Solution**: Run with sudo: `sudo ./check_lpr -H host`
+- **Or**: Configure sudoers as shown above
+
+**Problem**: Connection refused
+- **Solution**: Verify LPD service is running on target host
+- **Check**: `telnet printer.domain.com 515`
+
+**Problem**: Timeout
+- **Solution**: Check network connectivity and firewall rules
+- **Solution**: Increase timeout with `-t 30`
+
+**Problem**: Source port already in use
+- **Solution**: Try a different port in range 721-731: `-s 725`
+- **Or**: Wait a few seconds for previous connection to close
+
+**Problem**: Invalid queue name
+- **Solution**: Verify queue name with printer administrator
+- **Common names**: lp, pr2, main, default
+
+### Security Considerations
+
+1. **Privileged Ports**: Source ports 721-731 require root privileges
+2. **Sudo Access**: Configure minimal sudo permissions for nagios user
+3. **Network Security**: LPD protocol has no encryption - use on trusted networks only
+4. **Firewall Rules**: Ensure port 515 is accessible from monitoring server
+
+### Dependencies
+- Python 3.8+
+- Standard library only (no external dependencies)
+- Root privileges (for source port binding)
+
+### Historical Context
+
+LPD protocol dates back to BSD Unix (1980s) and is still widely used for network printing. Modern alternatives include IPP (Internet Printing Protocol), but many enterprise environments still rely on LPD for legacy compatibility.
+
+**Attribution**: 
+- Original C version: Copyright (c) 2002 Scott Lurndal
+- Converted to Python: 2025
+- License: GNU General Public License (GPL) version 3
+
+---
