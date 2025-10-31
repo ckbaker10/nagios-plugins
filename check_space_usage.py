@@ -52,22 +52,49 @@ class SpaceUsageChecker:
         self.top_n = top_n
         self.exclude_paths = exclude_paths or []
         self.verbose = verbose
+        self.network_mounts = self._get_network_mounts()
         self.mountpoints = self._get_mountpoints()
         
         if self.verbose:
             print(f"DEBUG: Analyzing path: {self.path}")
-            print(f"DEBUG: Mount points detected: {len(self.mountpoints)}")
+            print(f"DEBUG: Network mounts detected (excluded): {len(self.network_mounts)}")
+            for nm in sorted(self.network_mounts):
+                print(f"DEBUG:   - {nm}")
+            print(f"DEBUG: Local mount points detected: {len(self.mountpoints)}")
             for mp in sorted(self.mountpoints):
                 print(f"DEBUG:   - {mp}")
     
+    def _get_network_mounts(self) -> Set[str]:
+        """Get all network mount points to exclude from analysis"""
+        network_mounts = set()
+        network_fstypes = {'cifs', 'nfs', 'nfs4', 'smbfs', 'davfs', 'fuse.sshfs'}
+        
+        try:
+            partitions = psutil.disk_partitions(all=True)
+            for partition in partitions:
+                if partition.fstype.lower() in network_fstypes:
+                    network_mounts.add(str(Path(partition.mountpoint).resolve()))
+        except Exception as e:
+            if self.verbose:
+                print(f"DEBUG: Error getting network mounts: {e}")
+        
+        return network_mounts
+    
     def _get_mountpoints(self) -> Set[str]:
-        """Get all mount points on the system"""
+        """Get all mount points on the system (excluding network mounts)"""
         mountpoints = set()
+        network_fstypes = {'cifs', 'nfs', 'nfs4', 'smbfs', 'davfs', 'fuse.sshfs'}
         
         try:
             # Use psutil to get mount points
             partitions = psutil.disk_partitions(all=True)
             for partition in partitions:
+                # Skip network filesystems
+                if partition.fstype.lower() in network_fstypes:
+                    if self.verbose:
+                        print(f"DEBUG: Skipping network mount: {partition.mountpoint} (type: {partition.fstype})")
+                    continue
+                    
                 mountpoints.add(str(Path(partition.mountpoint).resolve()))
                 
         except Exception as e:
@@ -84,6 +111,19 @@ class SpaceUsageChecker:
     def _should_exclude(self, path: Path) -> bool:
         """Check if a path should be excluded from analysis"""
         path_str = str(path)
+        
+        # Check if it's a network mount
+        if path_str in self.network_mounts:
+            if self.verbose:
+                print(f"DEBUG: Excluding network mount: {path_str}")
+            return True
+        
+        # Check if path is under a network mount
+        for network_mount in self.network_mounts:
+            if path_str.startswith(network_mount + '/') or path_str == network_mount:
+                if self.verbose:
+                    print(f"DEBUG: Excluding path under network mount: {path_str}")
+                return True
         
         # Check explicit exclusions
         for exclude in self.exclude_paths:
