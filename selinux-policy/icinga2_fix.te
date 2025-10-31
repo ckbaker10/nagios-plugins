@@ -10,7 +10,7 @@
 #   - Execute system control commands (systemctl, rpm)
 #   - Access various filesystem types
 
-module icinga2_fix 1.12;
+module icinga2_fix 1.14;
 
 require {
         type system_dbusd_t;
@@ -18,6 +18,7 @@ require {
         type initrc_exec_t;
         type unconfined_service_t;
         type systemd_logind_t;
+        type systemd_hostnamed_t;
         type fail2ban_t;
         type crond_t;
         type chronyd_t;
@@ -137,6 +138,7 @@ allow icinga2_t setroubleshootd_t:dir { getattr search };
 allow icinga2_t sshd_t:dir { getattr search };
 allow icinga2_t syslogd_t:dir { getattr search };
 allow icinga2_t system_dbusd_t:dir { getattr search };
+allow icinga2_t systemd_hostnamed_t:dir { getattr search };
 allow icinga2_t systemd_logind_t:dir { getattr search };
 allow icinga2_t tuned_t:dir { getattr search };
 allow icinga2_t udev_t:dir { getattr search };
@@ -164,6 +166,7 @@ allow icinga2_t setroubleshootd_t:file { getattr read open };
 allow icinga2_t sshd_t:file { getattr read open };
 allow icinga2_t syslogd_t:file { getattr read open };
 allow icinga2_t system_dbusd_t:file { getattr read open };
+allow icinga2_t systemd_hostnamed_t:file { getattr read open };
 allow icinga2_t systemd_logind_t:file { getattr read open };
 allow icinga2_t tuned_t:file { getattr read open };
 allow icinga2_t udev_t:file { getattr read open };
@@ -191,6 +194,7 @@ allow icinga2_t setroubleshootd_t:lnk_file read;
 allow icinga2_t sshd_t:lnk_file read;
 allow icinga2_t syslogd_t:lnk_file read;
 allow icinga2_t system_dbusd_t:lnk_file read;
+allow icinga2_t systemd_hostnamed_t:lnk_file read;
 allow icinga2_t systemd_logind_t:lnk_file read;
 allow icinga2_t tuned_t:lnk_file read;
 allow icinga2_t udev_t:lnk_file read;
