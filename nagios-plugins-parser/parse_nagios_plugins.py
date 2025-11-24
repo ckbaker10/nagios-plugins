@@ -31,10 +31,11 @@ class PluginOption:
         return f"Option(-{self.short}, --{self.long}, {self.has_arg})"
 
 class PluginParser:
-    def __init__(self, source_file: Path, plugin_dir: str = None):
+    def __init__(self, source_file: Path, plugin_dir: str = None, command_prefix: str = None):
         self.source_file = source_file
         self.plugin_name = source_file.stem  # check_apt
         self.plugin_dir = plugin_dir  # Optional static path prefix
+        self.command_prefix = command_prefix  # Optional command name prefix
         self.options: List[PluginOption] = []
         self.content = ""
         
@@ -201,7 +202,9 @@ class PluginParser:
     def generate_icinga_command(self) -> str:
         """Generate Icinga2 CheckCommand definition."""
         lines = []
-        lines.append(f'object CheckCommand "{self.plugin_name}" {{')
+        # Apply command prefix if specified
+        command_name = f"{self.command_prefix}_{self.plugin_name}" if self.command_prefix else self.plugin_name
+        lines.append(f'object CheckCommand "{command_name}" {{')
         
         # Use static path if provided, otherwise use PluginDir variable
         if self.plugin_dir:
@@ -299,6 +302,7 @@ Examples:
   %(prog)s --plugins-dir ./plugins --output icinga-commands.conf --track-progress
   %(prog)s -p /opt/nagios-plugins/libexec -o /etc/icinga2/conf.d/commands-custom.conf
   %(prog)s -p ./plugins -o commands.conf --plugin-path /opt/monitoring-nagios-git-2.4.12/libexec
+  %(prog)s -p ./plugins -o commands-git.conf --command-prefix git --plugin-path /opt/monitoring-git/libexec
         """
     )
     
@@ -326,6 +330,12 @@ Examples:
         '--plugin-path',
         type=str,
         help='Static plugin path prefix (e.g., /opt/monitoring-nagios-git-2.4.12/libexec). If not specified, uses PluginDir variable.'
+    )
+    
+    parser.add_argument(
+        '--command-prefix',
+        type=str,
+        help='Prefix for CheckCommand object names (e.g., "git" produces "git_check_http"). Useful for distinguishing plugin versions.'
     )
     
     args = parser.parse_args()
@@ -365,6 +375,8 @@ Examples:
         print(f"Plugin path: {args.plugin_path} (static)")
     else:
         print(f"Plugin path: PluginDir (variable)")
+    if args.command_prefix:
+        print(f"Command prefix: {args.command_prefix}")
     print(f"Found {len(c_files)} C plugin files and {len(pl_files)} Perl plugin files")
     
     all_commands = []
@@ -379,7 +391,7 @@ Examples:
         print(f"\nParsing {plugin_file.name}...")
         update_progress(plugin_file.name, 'in-progress', progress_file=progress_file)
         
-        parser_instance = PluginParser(plugin_file, plugin_dir=args.plugin_path)
+        parser_instance = PluginParser(plugin_file, plugin_dir=args.plugin_path, command_prefix=args.command_prefix)
         if parser_instance.parse():
             print(f"  Found {len(parser_instance.options)} options")
             for opt in parser_instance.options:
