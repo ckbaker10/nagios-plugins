@@ -205,6 +205,7 @@ class PluginParser:
         # Apply command prefix if specified
         command_name = f"{self.command_prefix}_{self.plugin_name}" if self.command_prefix else self.plugin_name
         lines.append(f'object CheckCommand "{command_name}" {{')
+        lines.append('  import "plugin-check-command"')
         
         # Use static path if provided, otherwise use PluginDir variable
         if self.plugin_dir:
