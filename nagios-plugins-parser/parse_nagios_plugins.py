@@ -14,6 +14,7 @@ and generate Icinga2 CheckCommand definitions.
 import re
 import os
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
@@ -30,9 +31,10 @@ class PluginOption:
         return f"Option(-{self.short}, --{self.long}, {self.has_arg})"
 
 class PluginParser:
-    def __init__(self, source_file: Path):
+    def __init__(self, source_file: Path, plugin_dir: str = None):
         self.source_file = source_file
         self.plugin_name = source_file.stem  # check_apt
+        self.plugin_dir = plugin_dir  # Optional static path prefix
         self.options: List[PluginOption] = []
         self.content = ""
         
@@ -200,7 +202,13 @@ class PluginParser:
         """Generate Icinga2 CheckCommand definition."""
         lines = []
         lines.append(f'object CheckCommand "{self.plugin_name}" {{')
-        lines.append(f'  command = [ PluginDir + "/{self.plugin_name}" ]')
+        
+        # Use static path if provided, otherwise use PluginDir variable
+        if self.plugin_dir:
+            lines.append(f'  command = [ "{self.plugin_dir}/{self.plugin_name}" ]')
+        else:
+            lines.append(f'  command = [ PluginDir + "/{self.plugin_name}" ]')
+        
         lines.append('')
         lines.append('  arguments = {')
         
@@ -251,10 +259,17 @@ class PluginParser:
         
         return '\n'.join(lines)
 
-def update_progress(filename: str, status: str, notes: str = ""):
+def update_progress(filename: str, status: str, notes: str = "", progress_file: Optional[Path] = None):
     """Update parseprogress.txt with parsing status."""
-    progress_file = Path('/opt/nagios-plugins-lukas/debug_files/parseprogress.txt')
+    if not progress_file:
+        return
+    
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Create progress file if it doesn't exist
+    if not progress_file.exists():
+        progress_file.write_text(f"{filename}|{status}|{timestamp}|{notes}\n")
+        return
     
     # Read all lines
     lines = progress_file.read_text().split('\n')
@@ -267,13 +282,72 @@ def update_progress(filename: str, status: str, notes: str = ""):
             updated = True
             break
     
+    # Add new line if not found
+    if not updated:
+        lines.append(f"{filename}|{status}|{timestamp}|{notes}")
+    
     # Write back
-    if updated:
-        progress_file.write_text('\n'.join(lines))
+    progress_file.write_text('\n'.join(lines))
 
 def main():
-    plugins_dir = Path('/opt/nagios-plugins-lukas/debug_files/nagios-plugins')
-    output_file = Path('/opt/nagios-plugins-lukas/icinga-custom-commands/commands-nagios-plugins-2.4.12.conf')
+    parser = argparse.ArgumentParser(
+        description='Parse Nagios plugins source code and generate Icinga2 CheckCommand definitions',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s -p /path/to/nagios-plugins -o commands.conf
+  %(prog)s --plugins-dir ./plugins --output icinga-commands.conf --track-progress
+  %(prog)s -p /opt/nagios-plugins/libexec -o /etc/icinga2/conf.d/commands-custom.conf
+  %(prog)s -p ./plugins -o commands.conf --plugin-path /opt/monitoring-nagios-git-2.4.12/libexec
+        """
+    )
+    
+    parser.add_argument(
+        '-p', '--plugins-dir',
+        required=True,
+        type=Path,
+        help='Path to nagios-plugins source directory containing check_*.c and check_*.pl files'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        required=True,
+        type=Path,
+        help='Output file path for generated Icinga2 CheckCommand definitions'
+    )
+    
+    parser.add_argument(
+        '--track-progress',
+        action='store_true',
+        help='Enable progress tracking (creates parseprogress.txt in script directory)'
+    )
+    
+    parser.add_argument(
+        '--plugin-path',
+        type=str,
+        help='Static plugin path prefix (e.g., /opt/monitoring-nagios-git-2.4.12/libexec). If not specified, uses PluginDir variable.'
+    )
+    
+    args = parser.parse_args()
+    
+    plugins_dir = args.plugins_dir.resolve()
+    output_file = args.output.resolve()
+    
+    # Setup progress file if requested
+    progress_file = None
+    if args.track_progress:
+        script_dir = Path(__file__).parent
+        progress_file = script_dir / 'parseprogress.txt'
+        print(f"Progress tracking enabled: {progress_file}")
+    
+    # Validate plugins directory
+    if not plugins_dir.exists():
+        print(f"Error: Plugins directory does not exist: {plugins_dir}")
+        sys.exit(1)
+    
+    if not plugins_dir.is_dir():
+        print(f"Error: Plugins path is not a directory: {plugins_dir}")
+        sys.exit(1)
     
     # Find all check files (C and Perl)
     c_files = list(plugins_dir.rglob('check_*.c'))
@@ -285,35 +359,42 @@ def main():
     
     all_files = sorted(c_files + pl_files, key=lambda x: x.name)
     
+    print(f"Plugins directory: {plugins_dir}")
+    print(f"Output file: {output_file}")
+    if args.plugin_path:
+        print(f"Plugin path: {args.plugin_path} (static)")
+    else:
+        print(f"Plugin path: PluginDir (variable)")
     print(f"Found {len(c_files)} C plugin files and {len(pl_files)} Perl plugin files")
     
     all_commands = []
     all_commands.append('# Nagios Plugins 2.4.12 - Icinga2 CheckCommand Definitions')
     all_commands.append('# Auto-generated by parse_nagios_plugins.py')
     all_commands.append(f'# Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+    all_commands.append(f'# Source: {plugins_dir}')
     all_commands.append('')
     
     processed = 0
     for plugin_file in all_files:
         print(f"\nParsing {plugin_file.name}...")
-        update_progress(plugin_file.name, 'in-progress')
+        update_progress(plugin_file.name, 'in-progress', progress_file=progress_file)
         
-        parser = PluginParser(plugin_file)
-        if parser.parse():
-            print(f"  Found {len(parser.options)} options")
-            for opt in parser.options:
+        parser_instance = PluginParser(plugin_file, plugin_dir=args.plugin_path)
+        if parser_instance.parse():
+            print(f"  Found {len(parser_instance.options)} options")
+            for opt in parser_instance.options:
                 print(f"    {opt}")
             
-            command_def = parser.generate_icinga_command()
+            command_def = parser_instance.generate_icinga_command()
             all_commands.append(command_def)
             
-            update_progress(plugin_file.name, 'completed', f'{len(parser.options)} options')
+            update_progress(plugin_file.name, 'completed', f'{len(parser_instance.options)} options', progress_file=progress_file)
             processed += 1
         else:
-            update_progress(plugin_file.name, 'error', 'Failed to parse')
+            update_progress(plugin_file.name, 'error', 'Failed to parse', progress_file=progress_file)
     
     # Write output
-    output_file.parent.mkdir(exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text('\n'.join(all_commands))
     
     print(f"\n✓ Successfully parsed {processed}/{len(all_files)} plugins")
