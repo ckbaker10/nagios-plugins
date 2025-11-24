@@ -387,6 +387,8 @@ Examples:
     all_commands.append('')
     
     processed = 0
+    seen_commands = {}  # Track command names to avoid duplicates
+    
     for plugin_file in all_files:
         print(f"\nParsing {plugin_file.name}...")
         update_progress(plugin_file.name, 'in-progress', progress_file=progress_file)
@@ -396,6 +398,20 @@ Examples:
             print(f"  Found {len(parser_instance.options)} options")
             for opt in parser_instance.options:
                 print(f"    {opt}")
+            
+            # Generate the command name to check for duplicates
+            command_name = f"{args.command_prefix}_{parser_instance.plugin_name}" if args.command_prefix else parser_instance.plugin_name
+            
+            # Check if we already have this command
+            if command_name in seen_commands:
+                prev_file = seen_commands[command_name]
+                print(f"  ⚠ Skipping duplicate: {command_name} already defined by {prev_file.name}")
+                print(f"    Preferring {prev_file.suffix} over {plugin_file.suffix}")
+                update_progress(plugin_file.name, 'skipped', f'Duplicate of {prev_file.name}', progress_file=progress_file)
+                continue
+            
+            # Track this command
+            seen_commands[command_name] = plugin_file
             
             command_def = parser_instance.generate_icinga_command()
             all_commands.append(command_def)
