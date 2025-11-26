@@ -24,6 +24,24 @@ These plugins are tested only by me using them in my own environment
 
 For detailed plugin documentation see [README-CHECKS.md](README-CHECKS.md)
 
+## TAPO KLAP Problems
+
+**Important:** Starting from firmware version 1.4 (released November 2025), you must enable **Third-party Vendor Compatibility** in the Tapo app settings to use the KLAP protocol with the P110 smart plug. Without this setting enabled, the plugin will not be able to communicate with the device.
+
+To enable third-party vendor compatibility:
+
+1. Open the Tapo app and select your P110 device
+   
+   <img src="pics/tapo_1.jpeg" alt="Tapo App Device Selection" width="300">
+
+2. Navigate to device settings
+   
+   <img src="pics/tapo_2.jpeg" alt="Tapo Device Settings" width="300">
+
+3. Enable "Third-party Vendor Compatibility"
+   
+   <img src="pics/tapo_3.jpeg" alt="Enable Third-party Compatibility" width="300">
+
 ## Quick Start
 
 ### Prerequisites
@@ -211,19 +229,6 @@ sudo systemctl reload icinga2
 ```
 ./check_p110 -H 10.10.10.138 -u "user@example.com" -p "password" --expect-on
 ```
-
-**Important:** Starting from firmware version 1.4 (released November 2025), you must enable **Third-party Vendor Compatibility** in the Tapo app settings to use the KLAP protocol with the P110 smart plug. Without this setting enabled, the plugin will not be able to communicate with the device.
-
-To enable third-party vendor compatibility:
-
-1. Open the Tapo app and select your P110 device
-   ![Tapo App Device Selection](pics/tapo_1.jpeg)
-
-2. Navigate to device settings
-   ![Tapo Device Settings](pics/tapo_2.jpeg)
-
-3. Enable "Third-party Vendor Compatibility"
-   ![Enable Third-party Compatibility](pics/tapo_3.jpeg)
 
 ### Printer
 ```
